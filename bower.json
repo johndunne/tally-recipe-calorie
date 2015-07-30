@@ -1,0 +1,29 @@
+{
+  "name": "tally-recipe-calorie",
+  "version": "0.0.1",
+  "homepage": "https://github.com/johndunne/tally-recipe-calorie",
+  "authors": [
+    "johndunne <john@alldunne.org>"
+  ],
+  "description": "Receive nutrition information from recipe cal calc. Including parsing of recipes/ingredients into nutritional information",
+  "main": "client.js",
+  "moduleType": [
+    "globals",
+    "node"
+  ],
+  "keywords": [
+    "recipe",
+    "parsing",
+    "calorie",
+    "recipe",
+    "nutrition"
+  ],
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ]
+}
