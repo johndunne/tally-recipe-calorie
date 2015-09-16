@@ -7,6 +7,7 @@ var debug = false;
 var scheme = "https";
 var currentRecipe = {};
 var alternativeFoods = {};
+var apiOptions = false;
 
 var initRecipeCalCalc = function (host, api_options) {
     hostname = host;
@@ -16,9 +17,14 @@ var initRecipeCalCalc = function (host, api_options) {
     if( api_options.debug ){
         debug = api_options.debug;
     }
+    if( api_options.includeCaloriesInAlternatives === undefined ){
+        api_options.includeCaloriesInAlternatives = true;
+    }
+
     if( api_options.scheme && (api_options.scheme=="http"||api_options.scheme=="https") ){
         scheme = api_options.scheme;
     }
+    apiOptions = api_options;
 };
 
 function getAllNutritionColumnNames(){
@@ -59,53 +65,53 @@ function attachRecipeObjectMethods(recipe){
 }
 
 function attachFoodNutritionObjectMethods(nutrition_object){
-    nutrition_object.Calories = function(){ return nutrition_object["calories"] };
-    nutrition_object.Amount = function(){ return nutrition_object["amount"] };
-    nutrition_object.TotalFat = function(){ return nutrition_object["total_fat"] };
-    nutrition_object.TotalSugar = function(){ return nutrition_object["total_sugar"] };
-    nutrition_object.Protein = function(){ return nutrition_object["protein"] };
-    nutrition_object.Water = function(){ return nutrition_object["water"] };
-    nutrition_object.Ash = function(){ return nutrition_object["ash"] };
-    nutrition_object.Carbs = function(){ return nutrition_object["carbs"] };
+    nutrition_object.Calories = function(){ return nutrition_object["calories"].toFixed(0); };
+    nutrition_object.Amount = function(){ return nutrition_object["amount"].toFixed(1); };
+    nutrition_object.TotalFat = function(){ return nutrition_object["total_fat"].toFixed(1); };
+    nutrition_object.TotalSugar = function(){ return nutrition_object["total_sugar"].toFixed(1); };
+    nutrition_object.Protein = function(){ return nutrition_object["protein"].toFixed(1); };
+    nutrition_object.Water = function(){ return nutrition_object["water"].toFixed(1); };
+    nutrition_object.Ash = function(){ return nutrition_object["ash"].toFixed(3); };
+    nutrition_object.Carbs = function(){ return nutrition_object["carbs"].toFixed(1) };
     nutrition_object.Fiber_td = function(){ return nutrition_object["fiber_td"] };
-    nutrition_object.Calcium = function(){ return nutrition_object["calcium"] };
-    nutrition_object.Iron = function(){ return nutrition_object["iron"] };
-    nutrition_object.Magnesium = function(){ return nutrition_object["magnesium"] };
-    nutrition_object.Phosphorus = function(){ return nutrition_object["phosphorus"] };
-    nutrition_object.Potassium = function(){ return nutrition_object["potassium"] };
-    nutrition_object.Sodium = function(){ return nutrition_object["sodium"] };
-    nutrition_object.Zinc = function(){ return nutrition_object["zinc"] };
-    nutrition_object.Copper = function(){ return nutrition_object["copper"] };
-    nutrition_object.Manganese = function(){ return nutrition_object["manganese"] };
-    nutrition_object.Selenium = function(){ return nutrition_object["selenium"] };
-    nutrition_object.VitaminC = function(){ return nutrition_object["vit_c"] };
-    nutrition_object.VitaminB1 = function(){ return nutrition_object["vit_b1"] };
-    nutrition_object.VitaminB2 = function(){ return nutrition_object["vit_b2"] };
-    nutrition_object.VitaminB3 = function(){ return nutrition_object["vit_b3"] };
-    nutrition_object.VitaminB5 = function(){ return nutrition_object["vit_b5"] };
-    nutrition_object.VitaminB6 = function(){ return nutrition_object["vit_b6"] };
-    nutrition_object.FolateTotal = function(){ return nutrition_object["folate_tot"] };
-    nutrition_object.FolicAcid = function(){ return nutrition_object["folic_acid"] };
-    nutrition_object.FoodFolate = function(){ return nutrition_object["food_folate"] };
-    nutrition_object.Folate_dfe = function(){ return nutrition_object["folate_dfe"] };
-    nutrition_object.CholineTotal = function(){ return nutrition_object["choline_tot"] };
-    nutrition_object.VitaminB12 = function(){ return nutrition_object["vit_b12"] };
-    nutrition_object.VitaminA_iu = function(){ return nutrition_object["vit_a_iu"] };
-    nutrition_object.VitaminA_rae = function(){ return nutrition_object["vit_a_rae"] };
-    nutrition_object.Retinol = function(){ return nutrition_object["retinol"] };
-    nutrition_object.AlphaCarot = function(){ return nutrition_object["alpha_carot"] };
-    nutrition_object.BetaCarot = function(){ return nutrition_object["beta_carot"] };
-    nutrition_object.BetaCrypt = function(){ return nutrition_object["beta_crypt"] };
-    nutrition_object.Lycopene = function(){ return nutrition_object["lycopene"] };
-    nutrition_object.LutZea = function(){ return nutrition_object["lut_zea"] };
-    nutrition_object.VitaminE = function(){ return nutrition_object["vit_e"] };
-    nutrition_object.VitaminD_mcg = function(){ return nutrition_object["vit_d_mcg"] };
-    nutrition_object.VitaminD_iu = function(){ return nutrition_object["vit_d_iu"] };
-    nutrition_object.VitaminK = function(){ return nutrition_object["vit_k"] };
-    nutrition_object.SaturatedFat = function(){ return nutrition_object["sat_fat"] };
-    nutrition_object.MonosaturatedFat = function(){ return nutrition_object["mono_fat"] };
-    nutrition_object.PolyunsaturatedFat = function(){ return nutrition_object["poly_fat"] };
-    nutrition_object.Cholesterol = function(){ return nutrition_object["cholestrl"] };
+    nutrition_object.Calcium = function(){ return nutrition_object["calcium"].toFixed(3) };
+    nutrition_object.Iron = function(){ return nutrition_object["iron"].toFixed(3) };
+    nutrition_object.Magnesium = function(){ return nutrition_object["magnesium"].toFixed(3) };
+    nutrition_object.Phosphorus = function(){ return nutrition_object["phosphorus"].toFixed(3) };
+    nutrition_object.Potassium = function(){ return nutrition_object["potassium"].toFixed(3) };
+    nutrition_object.Sodium = function(){ return nutrition_object["sodium"].toFixed(3) };
+    nutrition_object.Zinc = function(){ return nutrition_object["zinc"].toFixed(3) };
+    nutrition_object.Copper = function(){ return nutrition_object["copper"].toFixed(3) };
+    nutrition_object.Manganese = function(){ return nutrition_object["manganese"].toFixed(3) };
+    nutrition_object.Selenium = function(){ return nutrition_object["selenium"].toFixed(3) };
+    nutrition_object.VitaminC = function(){ return nutrition_object["vit_c"].toFixed(3) };
+    nutrition_object.VitaminB1 = function(){ return nutrition_object["vit_b1"].toFixed(3) };
+    nutrition_object.VitaminB2 = function(){ return nutrition_object["vit_b2"].toFixed(3) };
+    nutrition_object.VitaminB3 = function(){ return nutrition_object["vit_b3"].toFixed(3) };
+    nutrition_object.VitaminB5 = function(){ return nutrition_object["vit_b5"].toFixed(3) };
+    nutrition_object.VitaminB6 = function(){ return nutrition_object["vit_b6"].toFixed(3) };
+    nutrition_object.FolateTotal = function(){ return nutrition_object["folate_tot"].toFixed(3) };
+    nutrition_object.FolicAcid = function(){ return nutrition_object["folic_acid"].toFixed(3) };
+    nutrition_object.FoodFolate = function(){ return nutrition_object["food_folate"].toFixed(3) };
+    nutrition_object.Folate_dfe = function(){ return nutrition_object["folate_dfe"].toFixed(3) };
+    nutrition_object.CholineTotal = function(){ return nutrition_object["choline_tot"].toFixed(3) };
+    nutrition_object.VitaminB12 = function(){ return nutrition_object["vit_b12"].toFixed(3) };
+    nutrition_object.VitaminA_iu = function(){ return nutrition_object["vit_a_iu"].toFixed(3) };
+    nutrition_object.VitaminA_rae = function(){ return nutrition_object["vit_a_rae"].toFixed(3) };
+    nutrition_object.Retinol = function(){ return nutrition_object["retinol"].toFixed(3) };
+    nutrition_object.AlphaCarot = function(){ return nutrition_object["alpha_carot"].toFixed(3) };
+    nutrition_object.BetaCarot = function(){ return nutrition_object["beta_carot"].toFixed(3) };
+    nutrition_object.BetaCrypt = function(){ return nutrition_object["beta_crypt"].toFixed(3) };
+    nutrition_object.Lycopene = function(){ return nutrition_object["lycopene"].toFixed(3) };
+    nutrition_object.LutZea = function(){ return nutrition_object["lut_zea"].toFixed(3) };
+    nutrition_object.VitaminE = function(){ return nutrition_object["vit_e"].toFixed(3) };
+    nutrition_object.VitaminD_mcg = function(){ return nutrition_object["vit_d_mcg"].toFixed(3) };
+    nutrition_object.VitaminD_iu = function(){ return nutrition_object["vit_d_iu"].toFixed(3) };
+    nutrition_object.VitaminK = function(){ return nutrition_object["vit_k"].toFixed(3) };
+    nutrition_object.SaturatedFat = function(){ return nutrition_object["sat_fat"].toFixed(3) };
+    nutrition_object.MonosaturatedFat = function(){ return nutrition_object["mono_fat"].toFixed(3) };
+    nutrition_object.PolyunsaturatedFat = function(){ return nutrition_object["poly_fat"].toFixed(3) };
+    nutrition_object.Cholesterol = function(){ return nutrition_object["cholestrl"].toFixed(3) };
     nutrition_object.RecipeID = function(){ return nutrition_object["recipe_id"] };
     nutrition_object.FoodID = function(){ return nutrition_object["nut_food_id"] };
     nutrition_object.Name = function(){ return nutrition_object["name"] };
@@ -383,8 +389,12 @@ function watchAlternativeFoodForClicks(seq, food_box){
             if( map.length > 1 ) {
                 var select = "<select id='alternative_for_" + food_id + "' name='new_food_id'>";
                 map.forEach(function (ingredient) {
+                    var append_text = "";
+                    if(apiOptions.includeCaloriesInAlternatives){
+                        append_text = " (" + ingredient.Calories() + " calories)";
+                    }
                     var selected = ingredient.FoodID() == food_id ? "selected" : "";
-                    select += "<option value='" + ingredient.FoodID() + "' " + selected + ">" + ingredient.Name() + "</option>";
+                    select += "<option value='" + ingredient.FoodID() + "' " + selected + ">" + ingredient.Name() + append_text + "</option>";
                 });
                 select += "</select>";
                 $("#name_" + seq).html(select);
