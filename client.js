@@ -36,28 +36,408 @@ var initRecipeCalCalc = function (host, api_options) {
     apiOptions = api_options;
 };
 
+var nutritionalNames={ "amount":"Amount", "common_name":"Common Name", "calories":"Calories", "carbs":"Carbs", "total_sugar":"Total Sugar", "sat_fat":"Sat Fat", "protein":"Protein", "poly_fat":"Poly Fat", "total_fat":"Total fat", "alpha_carot":"Alpha carot", "amount":"Amount", "beta_carot":"Beta Carot", "beta_crypt":"Beta Crypt", "calcium":"Calcium", "cholestrl":"Cholesteral", "choline_tot":"Choline", "copper":"Copper", "fiber_td":"Fiber (td)", "folate_dfe":"Folate (dfe)", "folate_tot":"Folate", "folic_acid":"Folic Acid", "food_folate":"Food Folate", "food_id":"Food ID", "food_weight":"Food Weight", "ingredient_line":"Ingredient line", "iron":"Iron", "lut_zea":"Lut", "lycopene":"Lycopene", "magnesium":"Magnesium", "manganese":"Manganese", "mono_fat":"Mono fat", "multiplier":"Multiplier", "nut_food_id":"Nut Food ID", "phosphorus":"Phosphorus", "potassium":"Potassium", "retinol":"Retinol", "selenium":"Selenium", "shrt_desc":"Shrt Desc", "sodium":"Sodium", "vit_a_iu":"Vit A (iu)", "vit_a_rae":"Vit A", "vit_b1":"Vit B1", "vit_b2":"Vit B2", "vit_b3":"Vit B3", "vit_b5":"Vit B5", "vit_b6":"Vit B6", "vit_b12":"Vit B12", "vit_c":"Vit C", "vit_d_iu":"Vit D (iu)", "vit_d_mcg":"Vit D", "vit_e":"Vit E", "vit_k":"Vit K", "water":"Water", "zinc":"Zinc" };
+
+function vitaminChangeNames() {
+    $('[nutritional-name-me]').each(function () {
+        $(this).text(nutritionalNames[$(this).text()]);
+    });
+}
+
+function parseIngredients(ingredients,options,action) {
+    _internalThrottleKeyUps(function() {
+        recipeCalCalcParseIngredients(ingredients, options, action);
+    }, 2000)();
+}
+
+/*function recipeCalCalcParseIngredients(ingredients, options, action) {
+    if( typeof ingredients === 'string' ) {
+        ingredients = [ ingredients ];
+    }
+    if( typeof options === 'function'){
+        action = options
+        options = {}
+    }
+    if( debug ){
+        console.log("Parsing ingredients with options:");
+        console.log(options);
+    }
+    if( Object.prototype.toString.call( ingredients ) === '[object Array]' ) {
+        if(hostname) {
+            var query_data =  {};
+            if(options.limit){
+                query_data.limit = options.limit;
+            }
+            if(options.offset){
+                query_data.offset = options.offset;
+            }
+            var query = jQuery.param(query_data);
+            if(query.length>0){
+                query = "?" + query;
+            }
+            $.ajax({
+                url: scheme + "://" + hostname + "/parse/ingredients" + query,
+                type: 'POST',
+                contentType: 'application/x-www-form-urlencoded',
+                data: JSON.stringify(ingredients), //stringify is important
+                headers:{userid:user_id},
+                beforeSend: function (request) {
+                    if(debug) console.log("Setting header + " + user_id);
+                    request.setRequestHeader("userid", user_id);
+                },
+                success: function (data_in) {
+                    if( data_in ) {
+                        var recipe = {nutrition:data_in};
+                        recipe = parseRecipeCalCalcResponse(recipe, options);
+                        action(recipe,false)
+                        _internalScanDomForDynamicUIObjects();
+                    }else{
+                        console.error("Successful connection but no data! " + data_in);
+                    }
+                },
+                error: function (xhr, type) {
+                    console.error(xhr);
+                    console.error(type);
+                    action(false, "Server not responding.");
+                    //ga('set', 'ingredients_parsed', 'error');
+                    //alert('Ajax error!')
+                }
+            });
+        }else {
+            console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
+        }
+    }else{
+        action(false,"I need an array of ingredients or single string ingredient line.")
+    }
+}*/
+
+function _verifyRecipeObject(recipe){
+    if(recipe.portions){
+        if( typeof recipe.portions !== "number" && !isNaN(parseInt(recipe.portions, 10))){
+            recipe.portions = parseInt(recipe.portions, 10);
+        }
+    }
+    return recipe;
+}
+
+function CreateRecipe(recipe, options, action) {
+    if( debug ){
+        console.log("Parsing ingredients with options:");
+        console.log(options);
+    }
+
+    PostObject(_verifyRecipeObject(recipe), "recipe" , options, function(success,data){
+        var recipe = JSON.parse(data);
+        if(recipe) {
+            var new_recipe = internalAttachRecipeObjectMethods(recipe);
+            action(success, new_recipe);
+        }else{
+            action(success, data);
+        }
+    });
+}
+
+function PostObject(recipe, command , options, action) {
+    if( typeof options === 'function'){
+        action = options
+        options = {}
+    }
+    if( debug ){
+        console.log("Parsing ingredients with options:");
+        console.log(options);
+    }
+
+    if(hostname) {
+        $.ajax({
+            url: scheme + "://" + hostname + "/" + command,
+            type: 'POST',
+            contentType: 'application/x-www-form-urlencoded',
+            data: JSON.stringify(recipe), //stringify is important
+            headers:{userid:user_id},
+            beforeSend: function (request) {
+                if(debug) console.log("Setting header + " + user_id);
+                request.setRequestHeader("userid", user_id);
+            },
+            success: function (data_in) {
+                if( data_in ) {
+                    action(true,data_in);
+                }else{
+                    console.error("Successful connection but no data! " + data_in);
+                    action(true,data_in);
+                }
+            },
+            error: function (xhr, type) {
+                if(xhr.responseJSON && xhr.responseJSON.error ){
+                    action(false, xhr.responseJSON.error);
+                }else {
+                    action(false, xhr.statusText);
+                }
+                //ga('set', 'ingredients_parsed', 'error');
+                //alert('Ajax error!')
+            }
+        });
+    }else {
+        console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
+    }
+}
+
+function recipeCalCalcParseIngredients(ingredients, options, action) {
+    if( typeof ingredients === 'string' ) {
+        ingredients = [ ingredients ];
+    }
+    if( typeof options === 'function'){
+        action = options;
+        options = {};
+    }
+    if( debug ){
+        console.log("Parsing ingredients with options:");
+        console.log(options);
+    }
+    if( Object.prototype.toString.call( ingredients ) === '[object Array]' ) {
+        if(hostname) {
+            var query_data =  {};
+            if(options.limit){
+                query_data.limit = options.limit;
+            }
+            if(options.offset){
+                query_data.offset = options.offset;
+            }
+            var query = jQuery.param(query_data);
+            if(query.length>0){
+                query = "?" + query;
+            }
+            $.ajax({
+                url: scheme + "://" + hostname + "/parse/ingredients" + query,
+                type: 'POST',
+                contentType: 'application/x-www-form-urlencoded',
+                data: JSON.stringify(ingredients), //stringify is important
+                headers:{userid:user_id},
+                beforeSend: function (request) {
+                    if(debug) console.log("Setting header + " + user_id);
+                    request.setRequestHeader("userid", user_id);
+                },
+                success: function (ingredients_array) {
+                    if( ingredients_array ) {
+                        var recipe = {nutrition:ingredients_array};
+                        recipe = parseRecipeCalCalcResponse(recipe, options);
+                        action(recipe,false);
+                        _internalScanDomForDynamicUIObjects();
+                    } else {
+                        console.error("Successful connection but no data! " + ingredients_array);
+                        action(false, "Unknown error while contacting the server.");
+                    }
+                    applyCSS();
+
+                },
+                error: function (xhr, type) {
+                    console.error(xhr);
+                    console.error(type);
+                    action(false, "Server failed to respond.");
+                    //ga('set', 'ingredients_parsed', 'error');
+                    //alert('Ajax error!')
+                }
+            });
+        }else {
+            console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
+        }
+    }else{
+        action(false,"I need an array of ingredients or single string ingredient line.")
+    }
+}
+
+function FetchMyRecipesAPI(options, action) {
+    if( typeof options === 'function'){
+        action = options
+        options = {}
+    }
+    if( debug ){
+        console.log("Fetching my recipes");
+        console.log(options);
+    }
+    var path = "recipe";
+
+    if(hostname) {
+        var query_data =  {};
+        if(options.limit){
+            query_data.limit = options.limit;
+        }
+        if(options.offset){
+            query_data.offset = options.offset;
+        }
+        var query = jQuery.param(query_data);
+        if(query.length>0){
+            query = "?" + query;
+        }
+        $.ajax({
+            url: scheme + "://" + hostname + "/" + path  + query,
+            type: 'GET',
+            headers:{userid:user_id},
+            beforeSend: function (request) {
+                if(debug) console.log("Setting header + " + user_id);
+                request.setRequestHeader("userid", user_id);
+            },
+            success: function (data_in) {
+                if( data_in ) {
+                    data_in.forEach(function(obj){
+                        _internalAttachRecipeNutritionObjectMethods(obj);
+                        //formatNumbers(obj);
+                    });
+                    action(true, data_in);
+                }else{
+                    console.error("Successful connection but no data! " + data_in);
+                }
+                applyCSS();
+
+            },
+            error: function (xhr, type) {
+                action(false, "Server not responding.");
+            }
+        });
+    }else {
+        console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
+    }
+}
+
+function FetchSingleRecipeAPI(recipe_id, options, action) {
+    if( typeof options === 'function'){
+        action = options
+        options = {}
+    }
+    if( debug ){
+        console.log("Fetching 1 recipe [id=" + recipe_id + "]");
+        console.log(options);
+    }
+    if(!(parseInt(recipe_id)>0)){
+        console.error("Invalid recipe_id reciped [" + recipe_id+ "]")
+        action(false,"Invalid recipe_id reciped [" + recipe_id+ "]")
+        return;
+    }
+    var path = "recipe/" + recipe_id;
+
+    if(hostname) {
+        var query_data =  {};
+        if(options.limit){
+            query_data.limit = options.limit;
+        }
+        if(options.offset){
+            query_data.offset = options.offset;
+        }
+        var query = jQuery.param(query_data);
+        if(query.length>0){
+            query = "?" + query;
+        }
+        $.ajax({
+            url: scheme + "://" + hostname + "/" + path  + query,
+            type: 'GET',
+            headers:{userid:user_id},
+            beforeSend: function (request) {
+                if(debug) console.log("Setting user header id : " + user_id);
+                request.setRequestHeader("userid", user_id);
+            },
+            success: function (data_in) {
+                console.log(data_in);
+                if( data_in ) {
+                    parseRecipeCalCalcResponse();
+                    _internalAttachRecipeNutritionObjectMethods(data_in);
+                    //formatNumbers(data_in);
+                    action(true, data_in);
+                }else{
+                    console.error("Successful connection but no data! " + data_in);
+                }
+                applyCSS();
+            },
+            error: function (xhr, type) {
+                action(false, "Server not responding.");
+            }
+        });
+    }else {
+        console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
+    }
+}
+
+function FetchRecipeSuperObjectAPI(recipe_id, options, action) {
+    if( typeof options === 'function'){
+        action = options
+        options = {}
+    }
+    if( debug ){
+        console.log("Fetching 1 recipe [id=" + recipe_id + "]");
+        console.log(options);
+    }
+    if(!(parseInt(recipe_id)>0)){
+        console.error("Invalid recipe_id reciped [" + recipe_id+ "]")
+        action(false,"Invalid recipe_id reciped [" + recipe_id+ "]")
+        return;
+    }
+    var path = "super-recipe/" + recipe_id;
+
+    if(hostname) {
+        var query_data =  {};
+        if(options.limit){
+            query_data.limit = options.limit;
+        }
+        if(options.offset){
+            query_data.offset = options.offset;
+        }
+        var query = jQuery.param(query_data);
+        if(query.length>0){
+            query = "?" + query;
+        }
+        $.ajax({
+            url: scheme + "://" + hostname + "/" + path  + query,
+            type: 'GET',
+            headers:{userid:user_id},
+            beforeSend: function (request) {
+                if(debug) console.log("Setting user header id : " + user_id);
+                request.setRequestHeader("userid", user_id);
+            },
+            success: function (recipe_object) {
+                if(debug) console.log(recipe_object);
+                if( recipe_object ) {
+
+                    recipe_object = ConfigureRemoteRecipeForLocalUse(recipe_object, options);
+                    action(true, recipe_object);
+                    _internalScanDomForDynamicUIObjects();
+                    applyCSS();
+                }else{
+                    console.error("Successful connection but no data! " + recipe_object);
+                }
+            },
+            error: function (xhr, type) {
+                action(false, "Server not responding.");
+            }
+        });
+    }else {
+        console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
+    }
+}
+
+function refreshIngredients(options,action) {
+    currentRecipe = _internalRefreshRecipeOptions(currentRecipe,options);
+    action( currentRecipe, false );
+    _internalScanDomForDynamicUIObjects();
+}
+
+
 function _internalGetAllNutritionColumnNames(){
     return ["calories", "amount", "total_fat", "total_sugar", "protein", "water", "ash", "carbs", "fiber_td", "calcium", "iron", "magnesium", "phosphorus", "potassium", "sodium", "zinc", "copper", "manganese", "selenium", "vit_c", "vit_b1", "vit_b2", "vit_b3", "vit_b5", "vit_b6", "folate_tot", "folic_acid", "food_folate", "folate_dfe", "choline_tot", "vit_b12", "vit_a_iu", "vit_a_rae", "retinol", "alpha_carot", "beta_carot", "beta_crypt", "lycopene", "lut_zea", "vit_e", "vit_d_mcg", "vit_d_iu", "vit_k", "sat_fat", "mono_fat", "poly_fat", "cholestrl"];
 }
 
 var _internal_keyup_timer = null;
 function _internalThrottleKeyUps(f, delay){
-    console.log("KU:"+delay);
     return function(){
-        console.log("11!");
         var context = this, args = arguments;
         clearTimeout(_internal_keyup_timer);
         _internal_keyup_timer = window.setTimeout(function(){
-                console.log("Performing!");
                 f.apply(context, args);
             },
             delay || 500);
     };
 }
 
-function attachRecipeObjectMethods(recipe){
+function internalAttachRecipeObjectMethods(recipe){
     if(recipe.recipe_id===undefined){
-        console.error("attachRecipeObjectMethods is expecting a recipe object");
+        console.error("internalAttachRecipeObjectMethods is expecting a recipe object");
         console.error(recipe);
     }
 
@@ -105,23 +485,23 @@ function attachRecipeObjectMethods(recipe){
             console.error("Not an ingredient");
         }
         recipe.tempIngredientsStorage[seq]=ingredient;
-    ;}
+    };
     recipe.SwapIngredient = function(seq,ingredient){
         if(ingredient['calories']===undefined){
             console.error("Not an ingredient");
         }
         recipe.tempIngredientsStorage[seq]=ingredient;
-    ;}
+    };
 
     if(recipe.recipe_nutrition_abbrev_id!==undefined){
-        attachFoodNutritionObjectMethods(recipe);
+        _internalAttachFoodNutritionObjectMethods(recipe);
     }
     return recipe;
 }
 
-function attachFoodNutritionObjectMethods(nutrition_object){
+function _internalAttachFoodNutritionObjectMethods(nutrition_object){
     if(nutrition_object.recipe_nutrition_abbrev_id===undefined){
-        console.error("attachFoodNutritionObjectMethods is expecting a recipe nutrition object");
+        console.error("_internalAttachFoodNutritionObjectMethods is expecting a recipe nutrition object");
         console.error(nutrition_object);
     }
     nutrition_object.RecipeID = function(){ return nutrition_object["recipe_id"] };
@@ -129,19 +509,19 @@ function attachFoodNutritionObjectMethods(nutrition_object){
     nutrition_object.Name = function(){ return nutrition_object["name"] };
     nutrition_object.IngredientLine = function(){ return nutrition_object["ingredient_line"] };
     nutrition_object.Multiple = function(){ return nutrition_object["multiple"] };
-    return attachNutritionObjectMethods(nutrition_object);
+    return _internalAttachNutritionObjectMethods(nutrition_object);
 }
 
-function attachRecipeNutritionObjectMethods(nutrition_object){
+function _internalAttachRecipeNutritionObjectMethods(nutrition_object){
     if(nutrition_object.recipe_nutrition_abbrev_id===undefined){
         console.error("attachRecipeNutrition is expecting a recipe nutrition object");
         console.error(nutrition_object);
     }
     nutrition_object.RecipeNutritionAbbrevID = function(){ return nutrition_object["recipe_nutrition_abbrev_id"] };
-    return attachNutritionObjectMethods(nutrition_object);
+    return _internalAttachNutritionObjectMethods(nutrition_object);
 }
 
-function attachPossibleRecipeResultObjectMethods(nutrition_object){
+function _internalAttachPossibleRecipeResultObjectMethods(nutrition_object){
     if(nutrition_object.num_missing_ingredients===undefined){
         console.error("attachRecipeNutrition is expecting a possible recipe object");
         console.error(nutrition_object);
@@ -151,7 +531,7 @@ function attachPossibleRecipeResultObjectMethods(nutrition_object){
     return nutrition_object;
 }
 
-function attachNutritionObjectMethods(nutrition_object){
+function _internalAttachNutritionObjectMethods(nutrition_object){
     nutrition_object.Calories = function(){ return nutrition_object["calories"].toFixed(0); };
     nutrition_object.Amount = function(){ return nutrition_object["amount"] !== undefined ? nutrition_object["amount"].toFixed(1) : nutrition_object["food_weight"].toFixed(1); };
     nutrition_object.TotalFat = function(){ return nutrition_object["total_fat"].toFixed(1); };
@@ -202,133 +582,192 @@ function attachNutritionObjectMethods(nutrition_object){
     return nutrition_object;
 }
 
-var parseRecipeCalCalcResponse = function (data_in, options, action ) {
-    if (typeof action === 'function') {
-        //ga('set', 'ingredients_parsed', 'len_' + ingredients.length);
-        if(debug) {
-            console.log("Received a response and parsing changes...");
-            console.log(data_in);
-        }
-        var total = {};
-        var nutritionLabel = options.nutritionLabel;
-        if(options.recipeName){
-            if( nutritionLabel ){
-                nutritionLabel.itemName = options.recipeName;
-            }
-        }
-        _internalGetAllNutritionColumnNames().forEach(function(column_name){
-            total[column_name] = 0;
-        });
+var ConfigureRemoteRecipeForLocalUse = function (recipe_object, options) {
+    var local_recipe = parseRecipeCalCalcResponse(recipe_object,options);
+    local_recipe = _internalRefreshRecipeOptions(local_recipe,options);
+    //formatNumbers(local_recipe);
+    //console.log(local_recipe);
+    if(recipe_object.nutrition){
+        recipe_object.nutrition.forEach(function(e){
+            //e=formatNumbers(e);
+            console.log(e);
+        })
+    }
+    return local_recipe;
+}
+var _internalRefreshRecipeOptions = function (recipe_object, options) {
+    if(!recipe_object){
+        console.error("I can't refresh the missing recipe object");
+        return;
+    }
 
-        var ingredients = [];
-        var ingredients_list = "";
-        data_in.forEach(function (ing) {
-            if(ingredients_list.length>0){
-                ingredients_list += ", ";
-            }
-            ingredients_list += ing.common_name;
-            _internalGetAllNutritionColumnNames().forEach(function(column_name){
-                total[column_name] += parseFloat(ing[column_name]);
-            });
-
-            ing = formatNumbers(ing);
-            ing.seq = ingredients.length;
-            ingredients.push(ing);
-
-        });
-        var recipe = {};
-        if( options.portions ){
-            recipe.portions = options.portions;
+    if( options.portions ){
+        if ( recipe_object.total_nutrition ){
+            recipe_object.portions = options.portions;
             if(!isNaN(parseInt(options.portions, 10))) {
                 var perPortion = {};
                 _internalGetAllNutritionColumnNames().forEach(function(column_name){
-                    perPortion[column_name] = total[column_name] / options.portions;
+                    if(recipe_object.total_nutrition[column_name])
+                        perPortion[column_name] = recipe_object.total_nutrition[column_name] / options.portions;
                 });
-                recipe.perPortion = perPortion;
+                recipe_object.perPortion = perPortion;
             }else{
                 console.error("Ignoring portions [" + options.portions + "] as it's not numeric");
             }
         }else{
-            console.warn("No portions");
+            if( debug ) console.warn("Portions were provided but no total nutrition object was found.");
         }
-
-        if(nutritionLabel)
-        {
-            nutritionLabel['ingredientList'] =  ingredients_list;
-            nutritionLabel.showCalories = true;
-            nutritionLabel.showFatCalories = true;
-            nutritionLabel.showTotalFat = true;
-            nutritionLabel.showSatFat = true;
-            nutritionLabel.showTransFat = true;
-            nutritionLabel.showPolyFat = true;
-            nutritionLabel.showMonoFat = true;
-            nutritionLabel.showCholesterol = true;
-            nutritionLabel.showSodium = true;
-            nutritionLabel.showTotalCarb = true;
-            nutritionLabel.showFibers = true;
-            nutritionLabel.showSugars = true;
-            nutritionLabel.showProteins = true;
-            nutritionLabel.showVitaminA = true;
-            nutritionLabel.showVitaminC = true;
-            nutritionLabel.showCalcium = true;
-            nutritionLabel.showIron = true;
-
-            //'itemName'
-            /*'showItemName' : false,
-            'showServingsPerContainer' : true,
-            'ingredientList' : 'Enriched Bleached Wheat Flour (Bleached Flour, Malted Barley Flour, Niacin, Iron, Thiamin Mononitrate, Riboflavin, Folic Acid), Sugar, Vegetable Oil (contains one or more of the following oils: Cottonseed Oil, Palm Oil, Soybean Oil), Water, Hydrogenated Vegetable Oil (Palm Kernel Oil, Palm Oil), High Fructose Corn Syrup, Cocoa Powder (Processed With Alkali), contains 2% or less of the following: Eggs, Nonfat Milk, Glycerin, Soy Flour, Corn Syrup Solids, Leavening (Sodium Acid Pyrophosphate, Baking Soda, Sodium Aluminum Phosphate), Preservatives (Potassium Sorbate, Sodium Propionate, Calcium Propionate), Salt, Distilled Monoglycerides, Dextrose, Food Starch-Modified (Corn and/or Wheat), Soy, Lecithin, Natural and Artificial Flavor, Mono- and Diglycerides, Spices, Tapioca Starch, Wheat Starch, Cellulose Gum, Guar Gum, Karaya Gum, colored with Extracts of Annatto and Turmeric, Artificial Color.',
-
-            'showPolyFat' : false,
-            'showMonoFat' : false,
-            'showTransFat' : false,
-            'showFibers' : false,
-            'showVitaminA' : false,
-            'showVitaminC' : false,
-            'showCalcium' : false,
-            'showIron' : false,
-            'valueServingUnitQuantity' : 2.3,
-            'valueServingSize' : 6,
-            'valueServingSizeUnit' : 'DONUTS',*/
-
-            var portion_amount = recipe.perPortion ? recipe.perPortion : total;
-            nutritionLabel['valueCalories'] = portion_amount["calories"];
-            nutritionLabel['valueFatCalories'] = portion_amount[""];
-            nutritionLabel['valueTotalFat'] = portion_amount["total_fat"];
-            nutritionLabel['valueSatFat'] = portion_amount["sat_fat"];
-            nutritionLabel['valuePolyFat'] = portion_amount["poly_fat"];
-            nutritionLabel['valueMonoFat'] = portion_amount["mono_fat"];
-            nutritionLabel['valueCholesterol'] = portion_amount["cholestrl"];
-            nutritionLabel['valueSodium'] = portion_amount["sodium"];
-            nutritionLabel['valueTotalCarb'] = portion_amount["carbs"];
-            nutritionLabel['valueSugars'] = portion_amount["total_sugar"];
-            nutritionLabel['valueProteins'] = portion_amount["protein"];
-            nutritionLabel['valueVitaminA'] = portion_amount["vit_a_rae"];
-            nutritionLabel['valueVitaminC'] = portion_amount["vit_c"];
-            nutritionLabel['valueCalcium'] = portion_amount["calcium"];
-            nutritionLabel['valueIron'] = portion_amount["iron"];
-            nutritionLabel['valueFibers'] = portion_amount["fiber_td"];
-            recipe.nutritionLabel = nutritionLabel;
-        }
-
-        if( recipe.perPortion ){
-            recipe.perPortion = formatNumbers(recipe.perPortion);
-        }
-        recipe.total_nutrition = formatNumbers(total);
-        recipe.ingMap = ingredients;
-
-        currentRecipe=attachRecipeObjectMethods(recipe);
-        if(debug){
-            console.log("Recipe");
-            console.log("Calories a: " + recipe.total_nutrition['calories']);
-            console.log("Calories b: " + recipe.total_nutrition.calories);
-            console.log("Calories c: " + recipe.TallyIngredientNutrition("calories") );
-            console.log(currentRecipe);
-        }
-        action( recipe, false );
     }else{
-        console.error("RecipeCalCalc: parseRecipeCalCalcResponse 3rd param should be a function");
+        if( debug ) console.warn("No portions");
     }
-};
+
+    var nutritionLabel = options.nutritionLabel;
+    if(options.recipeName){
+        if( nutritionLabel ){
+            nutritionLabel.itemName = options.recipeName;
+        }
+    }
+    if(nutritionLabel)
+    {
+        nutritionLabel['ingredientList'] = recipe_object.ingredientsList;
+        nutritionLabel.showCalories = true;
+        nutritionLabel.showFatCalories = true;
+        nutritionLabel.showTotalFat = true;
+        nutritionLabel.showSatFat = true;
+        nutritionLabel.showTransFat = true;
+        nutritionLabel.showPolyFat = true;
+        nutritionLabel.showMonoFat = true;
+        nutritionLabel.showCholesterol = true;
+        nutritionLabel.showSodium = true;
+        nutritionLabel.showTotalCarb = true;
+        nutritionLabel.showFibers = true;
+        nutritionLabel.showSugars = true;
+        nutritionLabel.showProteins = true;
+        nutritionLabel.showVitaminA = true;
+        nutritionLabel.showVitaminC = true;
+        nutritionLabel.showCalcium = true;
+        nutritionLabel.showIron = true;
+
+        //'itemName'
+        /*'showItemName' : false,
+        'showServingsPerContainer' : true,
+        'ingredientList' : 'Enriched Bleached Wheat Flour (Bleached Flour, Malted Barley Flour, Niacin, Iron, Thiamin Mononitrate, Riboflavin, Folic Acid), Sugar, Vegetable Oil (contains one or more of the following oils: Cottonseed Oil, Palm Oil, Soybean Oil), Water, Hydrogenated Vegetable Oil (Palm Kernel Oil, Palm Oil), High Fructose Corn Syrup, Cocoa Powder (Processed With Alkali), contains 2% or less of the following: Eggs, Nonfat Milk, Glycerin, Soy Flour, Corn Syrup Solids, Leavening (Sodium Acid Pyrophosphate, Baking Soda, Sodium Aluminum Phosphate), Preservatives (Potassium Sorbate, Sodium Propionate, Calcium Propionate), Salt, Distilled Monoglycerides, Dextrose, Food Starch-Modified (Corn and/or Wheat), Soy, Lecithin, Natural and Artificial Flavor, Mono- and Diglycerides, Spices, Tapioca Starch, Wheat Starch, Cellulose Gum, Guar Gum, Karaya Gum, colored with Extracts of Annatto and Turmeric, Artificial Color.',
+
+        'showPolyFat' : false,
+        'showMonoFat' : false,
+        'showTransFat' : false,
+        'showFibers' : false,
+        'showVitaminA' : false,
+        'showVitaminC' : false,
+        'showCalcium' : false,
+        'showIron' : false,
+        'valueServingUnitQuantity' : 2.3,
+        'valueServingSize' : 6,
+        'valueServingSizeUnit' : 'DONUTS',*/
+
+        var portion_amount = recipe_object.perPortion ? recipe_object.perPortion : recipe_object.total_nutrition;
+        nutritionLabel['valueCalories'] = portion_amount["calories"];
+        nutritionLabel['valueFatCalories'] = portion_amount[""];
+        nutritionLabel['valueTotalFat'] = portion_amount["total_fat"];
+        nutritionLabel['valueSatFat'] = portion_amount["sat_fat"];
+        nutritionLabel['valuePolyFat'] = portion_amount["poly_fat"];
+        nutritionLabel['valueMonoFat'] = portion_amount["mono_fat"];
+        nutritionLabel['valueCholesterol'] = portion_amount["cholestrl"];
+        nutritionLabel['valueSodium'] = portion_amount["sodium"];
+        nutritionLabel['valueTotalCarb'] = portion_amount["carbs"];
+        nutritionLabel['valueSugars'] = portion_amount["total_sugar"];
+        nutritionLabel['valueProteins'] = portion_amount["protein"];
+        nutritionLabel['valueVitaminA'] = portion_amount["vit_a_rae"];
+        nutritionLabel['valueVitaminC'] = portion_amount["vit_c"];
+        nutritionLabel['valueCalcium'] = portion_amount["calcium"];
+        nutritionLabel['valueIron'] = portion_amount["iron"];
+        nutritionLabel['valueFibers'] = portion_amount["fiber_td"];
+        nutritionLabel['valueAlphaCarot'] = portion_amount['alpha_carot'];
+        nutritionLabel['valueBetaCarot'] = portion_amount['beta_carot'];
+        nutritionLabel['valueBetaCrypt'] = portion_amount['beta_crypt'];
+        nutritionLabel['valueCalcium'] = portion_amount['calcium'];
+        nutritionLabel['valueCholine'] = portion_amount['choline_tot'];
+        nutritionLabel['valueCopper'] = portion_amount['copper'];
+        nutritionLabel['valueFiber'] = portion_amount['fiber_td'];
+        nutritionLabel['valueFolate'] = portion_amount['folate_tot'];
+        nutritionLabel['valueFolicAcid'] = portion_amount['folic_acid'];
+        nutritionLabel['valueLycopene'] = portion_amount['lycopene'];
+        nutritionLabel['valueMagnesium'] = portion_amount['magnesium'];
+        nutritionLabel['valueManganese'] = portion_amount['manganese'];
+        nutritionLabel['valuePhosphorus'] = portion_amount['phosphorus'];
+        nutritionLabel['valuePotassium'] = portion_amount['potassium'];
+        nutritionLabel['valueRetinol'] = portion_amount['retinol'];
+        nutritionLabel['valueSelenium'] = portion_amount['selenium'];
+        nutritionLabel['valueVitaminB1'] = portion_amount['vit_b1'];
+        nutritionLabel['valueVitaminB2'] = portion_amount['vit_b2'];
+        nutritionLabel['valueVitaminB3'] = portion_amount['vit_b3'];
+        nutritionLabel['valueVitaminB5'] = portion_amount['vit_b5'];
+        nutritionLabel['valueVitaminB6'] = portion_amount['vit_b6'];
+        nutritionLabel['valueVitaminB12'] = portion_amount['vit_b12'];
+        nutritionLabel['valueVitaminD'] = portion_amount['vit_d_mcg'];
+        nutritionLabel['valueVitaminE'] = portion_amount['vit_e'];
+        nutritionLabel['valueVitaminK'] = portion_amount['vit_k'];
+        nutritionLabel['valueZinc'] = portion_amount['zinc'];
+        recipe_object.nutritionLabel = nutritionLabel;
+    }
+
+    if( recipe_object.perPortion ){
+        //recipe_object.perPortion = formatNumbers(recipe_object.perPortion);
+    }
+    return recipe_object;
+}
+
+//var parseRecipeCalCalcResponse = function (ingredients_array, options, action ) {
+var parseRecipeCalCalcResponse = function (recipe, options ) {
+    if (debug) {
+        console.log("Received a response and parsing changes...");
+        console.log(recipe);
+    }
+
+    var ingredients_array = recipe.nutrition; // The nutrition field is a remote server parsed field.
+    var total = {};
+    _internalGetAllNutritionColumnNames().forEach(function (column_name) {
+        total[column_name] = 0;
+    });
+
+    var ingredients = [];
+    var ingredients_list = "";
+    ingredients_array.forEach(function (ing) {
+        if (ingredients_list.length > 0) {
+            ingredients_list += ", ";
+        }
+        ingredients_list += ing.common_name;
+        _internalGetAllNutritionColumnNames().forEach(function (column_name) {
+            total[column_name] += parseFloat(ing[column_name]);
+        });
+
+        //ing = formatNumbers(ing);
+        ing.seq = ingredients.length;
+
+        //
+        // Watch for headers or useless ingredient rows
+        if (ing.common_name == "" && ing.food_id == 0) {
+            ing.header = "true";
+        }
+        ingredients.push(ing);
+    });
+
+    recipe.ingredientsList = ingredients_list;
+    recipe.total_nutrition = total;
+    recipe.ingMap = ingredients;
+
+    recipe = internalAttachRecipeObjectMethods(recipe);
+    if (debug) {
+        console.log("Recipe");
+        console.log("Calories a: " + recipe.total_nutrition['calories']);
+        console.log("Calories b: " + recipe.total_nutrition.calories);
+        console.log("Calories c: " + recipe.TallyIngredientNutrition("calories"));
+        console.log(recipe);
+    }
+
+    recipe = _internalRefreshRecipeOptions(recipe, options);
+    return recipe;
+}
 
 var _internal_parseRecipeCalCalcPossibleRecipesResponse = function (recipes, options, action ) {
     if (typeof action === 'function') {
@@ -340,9 +779,9 @@ var _internal_parseRecipeCalCalcPossibleRecipesResponse = function (recipes, opt
         var total = {};
         if(recipes.rows){
             recipes.rows.forEach(function(recipe){
-                attachRecipeObjectMethods(recipe);
-                attachPossibleRecipeResultObjectMethods(recipe);
-                attachRecipeNutritionObjectMethods(recipe);
+                internalAttachRecipeObjectMethods(recipe);
+                _internalAttachPossibleRecipeResultObjectMethods(recipe);
+                _internalAttachRecipeNutritionObjectMethods(recipe);
                 formatNumbers(recipe);
             });
         }
@@ -353,11 +792,11 @@ var _internal_parseRecipeCalCalcPossibleRecipesResponse = function (recipes, opt
 };
 
 function formatNumbers(object){
-    if(object["calories"]!== undefined) {object["calories"] = object["calories"].toFixed(0)};
-    if(object["amount"]!== undefined) {object["amount"] = object["amount"].toFixed(1)};
-    if(object["total_fat"]!== undefined) {object["total_fat"] = object["total_fat"].toFixed(1)};
-    if(object["total_sugar"]!== undefined) {object["total_sugar"] = object["total_sugar"].toFixed(1)};
-    if(object["protein"]!== undefined) {object["protein"] = object["protein"].toFixed(1)};
+    if(object["calories"]!== undefined && typeof object["calories"] === "number" && !isNaN(object["calories"]) ) {object["calories"] = object["calories"].toFixed(0)};
+    if(object["amount"]!== undefined && typeof object["amount"] === "number" && !isNaN(object["amount"]) ) {object["amount"] = object["amount"].toFixed(1)};
+    if(object["total_fat"]!== undefined && typeof object["total_fat"] === "number" && !isNaN(object["total_fat"]) ) {object["total_fat"] = object["total_fat"].toFixed(1)};
+    if(object["total_sugar"]!== undefined && typeof object["total_sugar"] === "number" && !isNaN(object["total_sugar"])) {object["total_sugar"] = object["total_sugar"].toFixed(1)};
+    if(object["protein"]!== undefined && typeof object["protein"] === "number" && !isNaN(object["protein"])) {object["protein"] = object["protein"].toFixed(1)};
     _internalGetAllNutritionColumnNames().forEach(function(column_name){
         if(typeof object[column_name] === "number" && !isNaN(object[column_name])) {
             if(object[column_name]!==undefined){object[column_name] = object[column_name].toFixed(3);}
@@ -366,93 +805,83 @@ function formatNumbers(object){
     return object;
 }
 
-function parseIngredients(ingredients,options,action) {
-    recipeCalCalcParseIngredients(ingredients, options, action);
-}
-
 function uniqId() {
     return Math.round(new Date().getTime() + (Math.random() * 100));
 }
+function _parseNumber( s){
+    var f = parseFloat(s);
+    return isNaN(f)?0.0:f;
+}
+function applyCSS() {
+    /*MutationObserver = window.MutationObserver || window.WebKitMutationObserver;
 
-function recipeCalCalcParseIngredients(ingredients, options, action) {
-    if( typeof ingredients === 'string' ) {
-        ingredients = [ ingredients ];
-    }
-    if( typeof options === 'function'){
-        action = options
-        options = {}
-    }
-    if( debug ){
-        console.log("Parsing ingredients with options:");
-        console.log(options);
-    }
-    if( Object.prototype.toString.call( ingredients ) === '[object Array]' ) {
-        if(hostname) {
-            var query_data =  {};
-            if(options.limit){
-                query_data.limit = options.limit;
-            }
-            if(options.offset){
-                query_data.offset = options.offset;
-            }
-            var query = jQuery.param(query_data);
-            if(query.length>0){
-                query = "?" + query;
-            }
-            $.ajax({
-                url: scheme + "://" + hostname + "/parse_ingredient_line" + query,
-                type: 'POST',
-                contentType: 'application/x-www-form-urlencoded',
-                data: JSON.stringify(ingredients), //stringify is important
-                headers:{userid:user_id},
-                beforeSend: function (request) {
-                    if(debug) console.log("Setting header + " + user_id);
-                    request.setRequestHeader("userid", user_id);
-                },
-                success: function (data_in) {
-                    if( data_in ) {
-                        parseRecipeCalCalcResponse(data_in, options, action);
+    var observer = new MutationObserver(function(mutations, observer) {
+        // fired when a mutation occurs
+        console.log(mutations, observer);
+        // ...
+    });
+    observer.observe(document, {
+        subtree: true,
+        attributes: false
+    });*/
+    $("[class=\"calorie-number\"]").each(function () {
+        $(this).text(_parseNumber($(this).text()).toFixed(0));
+    });
+    $("[class=\"macro-nutrient-number\"]").each(function () {
+        $(this).text(_parseNumber($(this).text()).toFixed(1));
+    });
+    $("[class=\"nutrient-number\"]").each(function () {
+        $(this).text(_parseNumber($(this).text()).toFixed(3));
+    });
+}
 
-                        var count = 0;
-                        //
-                        // Now cycle the dom and see if there's any actions to be applied
-                        $("span[changeable_food]").each(function() {
-                            count++;
-                            var id = $(this).attr("id");
-                            var seq = $(this).attr("seq");
-                            watchAlternativeFoodForClicks(seq,$(this));
-                        });
-                        if(debug && count == 0){
-                            console.warn("No span[changeable_food]'s found so no click events were attached to the outputted foods.")
-                        }
-                    }else{
-                        console.error("Successful connection but no data! " + data_in);
-                    }
-                },
-                error: function (xhr, type) {
-                    action(false, "Server not responding.");
-                    //ga('set', 'ingredients_parsed', 'error');
-                    //alert('Ajax error!')
-                }
-            });
-        }else {
-            console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
+function _internalScanDomForDynamicUIObjects(){
+    var count = 0;
+    //
+    // Now cycle the dom and see if there's any actions to be applied
+    $("*[changeable_food]").each(function() {
+        count++;
+        var id = $(this).attr("id");
+        var seq = $(this).attr("seq");
+        if(seq===undefined){
+            console.error("A changeable_food node requires the 'seq' attribute to be set.")
         }
-    }else{
-        action(false,"I need an array of ingredients or single string ingredient line.")
+
+        var food_id = $(this).attr("food_id");
+        if(food_id===undefined){
+            console.error("A 'changeable_food' node requires the 'food_id' attribute to be set.")
+        }
+        var grams = $(this).attr("grams");
+        if(grams===undefined){
+            console.error("A changeable_food node requires the 'grams' attribute to be set.")
+        }
+        watchAlternativeFoodForClicks(seq,$(this));
+
+        applyCSS();
+
+    });
+    if(debug && count == 0){
+        console.warn("No span[changeable_food]'s found so no click events were attached to the outputted foods.")
     }
 }
 
 function watchAlternativeFoodForChanges(seq, food_id){
+    $("#img_alternative_for_"+seq).click(function(){
+        $("#name_"+seq).html(original_alternatives[seq]);
+        original_alternatives[seq]=undefined;
+    });
     $("#alternative_for_"+food_id).change(function(){
         var text = $("#alternative_for_" + food_id + " option:selected").html();
         var new_food_id = $(this).val();
         var grams = $("#name_" + seq ).attr("grams");
-        $( "#name_" + seq ).attr( "food_id", new_food_id);
+        $( "#name_" + seq ).attr( "food_id", new_food_id); //TODO Cycle through all of the changeable_foods and change the food id
         $( "#name_" + seq ).html( "<span>" + text + "</span>" );
 
         fetchFoodNutritionObject(new_food_id,grams,{},function(nutrition_object){
-            console.log(nutrition_object);
+            if(debug){
+                console.log("Changing food at seq: " + seq);
+                console.log(nutrition_object);
+            }
             if( Object.keys(nutrition_object).length > 0 ){
                 $( "#calories_for_" + seq ).html(nutrition_object.Calories());
                 $( "#total_fat_for_" + seq ).html(nutrition_object.TotalFat());
@@ -463,13 +892,24 @@ function watchAlternativeFoodForChanges(seq, food_id){
     });
 }
 
+var original_alternatives = {};
+
 function watchAlternativeFoodForClicks(seq, food_box){
     food_box.dblclick(function(){
 
         if(debug)console.log("Received click");
 
-        var grams = $(this).attr("grams");
         var food_id = $(this).attr("food_id");
+        if( food_id == undefined){
+            console.error("Ignoring click on [" + food_box + "] due to missing 'food_id' attribute.")
+            return;
+        }
+        var grams = $(this).attr("grams");
+        if( grams == undefined){
+            console.error("Ignoring click on [" + food_box + "] due to missing 'grams' attribute.")
+            return;
+        }
+
         fetchAlternativeFoodsAndNutrients(food_id,grams ,{} , function(map){
             alternativeFoods[food_id] = map;
             if(debug)console.log(map);
@@ -485,6 +925,9 @@ function watchAlternativeFoodForClicks(seq, food_box){
                     select += "<option value='" + ingredient.FoodID() + "' " + selected + ">" + ingredient.Name() + append_text + "</option>";
                 });
                 select += "</select>";
+                if (original_alternatives[seq]==undefined)
+                    original_alternatives[seq] = $("#name_" + seq).html();
+                select += "<img id='img_alternative_for_" + seq + "' src='images/298-circlex.png'>";
                 $("#name_" + seq).html(select);
 
                 watchAlternativeFoodForChanges(seq,food_id);
@@ -527,7 +970,7 @@ function _internalRecipeCalCalcSearchRecipesWithIngredients(ingredients, options
                 query = "?" + query;
             }
             $.ajax({
-                url: scheme + "://" + hostname + "/possible_recipes" + query,
+                url: scheme + "://" + hostname + "/recipe/natural-search" + query,
                 type: 'POST',
                 contentType: 'application/x-www-form-urlencoded',
                 data: JSON.stringify(ingredients), //stringify is important
@@ -572,7 +1015,7 @@ function fetchAlternativeFoodsAndNutrients(food_id, amount_in_grams, options, ac
         },
         success: function (array) {
             array.forEach(function(ingredient){
-                attachFoodNutritionObjectMethods(ingredient);
+                _internalAttachFoodNutritionObjectMethods(ingredient);
             });
             action(array);
         },
@@ -611,7 +1054,7 @@ function fetchFoodNutritionObject(food_id, amount, options, action) {
         console.error("Invalid amount [" + amount + "]");
     }else {
         $.ajax({
-            url: scheme + "://" + hostname + "/nutrition/by-food/" + food_id + "/" + amount,
+            url: scheme + "://" + hostname + "/food-nutrition/by-food/" + food_id + "/" + amount,
             type: 'GET',
             contentType: 'application/x-www-form-urlencoded',
             headers: {userid: user_id},
@@ -619,7 +1062,7 @@ function fetchFoodNutritionObject(food_id, amount, options, action) {
                 request.setRequestHeader("userid", user_id);
             },
             success: function (data_in) {
-                attachFoodNutritionObjectMethods(data_in);
+                _internalAttachFoodNutritionObjectMethods(data_in);
                 action(data_in);
             },
             error: function (xhr, type) {
@@ -636,8 +1079,13 @@ function parseRecipeURL(postData, options, action) {
             action = options
             options = {}
         }
+        if( debug ){
+            if( options.nutritionLabel ){
+                console.log("Options require a nutritionLabel to be generated.")
+            }
+        }
         $.ajax({
-            url: scheme + "://" + hostname + "/parse_recipe"
+            url: scheme + "://" + hostname + "/parse/recipe"
             , type: 'POST'
             , contentType: 'application/json'
             //, headers: {UserID: user_id}
@@ -652,11 +1100,12 @@ function parseRecipeURL(postData, options, action) {
                         console.log("Received a response from url");
                         console.log(data_in);
                     }
-                    var recipe;
+                    var recipe={};
                     Object.keys(data_in).forEach(function (key) {
                         recipe = data_in[key];//only one object is returned in this map
                     });
-                    parseRecipeCalCalcResponse(recipe.parsed_ingredients, options, action);
+                    recipe = parseRecipeCalCalcResponse(recipe, options, action);
+                    action(recipe, false);
                 }else{
                     console.error("Successful connection but no data for recipe url! " + data_in);
                 }
@@ -717,18 +1166,85 @@ function getExternalTemplateDocument(extracted){
     };
     xhr.send();
 }
+window.store = {
+    localStoreSupport: function () {
+        try {
+            return 'localStorage' in window && window['localStorage'] !== null;
+        } catch (e) {
+            return false;
+        }
+    },
+    set: function (name, value, days) {
+        if (days) {
+            var date = new Date();
+            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+            var expires = "; expires=" + date.toGMTString();
+        }
+        else {
+            var expires = "";
+        }
+        if (this.localStoreSupport()) {
+            localStorage.setItem(name, value);
+        }
+        else {
+            document.cookie = name + "=" + value + expires + "; path=/";
+        }
+    },
+    get: function (name) {
+        if (this.localStoreSupport()) {
+            ret = localStorage.getItem(name);
+            //console.log(typeof ret);
+            switch (ret) {
+                case 'true':
+                    return true;
+                case 'false':
+                    return false;
+                default:
+                    return ret;
+            }
+        }
+        else {
+            var nameEQ = name + "=";
+            var ca = document.cookie.split(';');
+            for (var i = 0; i < ca.length; i++) {
+                var c = ca[i];
+                while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+                if (c.indexOf(nameEQ) == 0) {
+                    ret = c.substring(nameEQ.length, c.length);
+                    switch (ret) {
+                        case 'true':
+                            return true;
+                        case 'false':
+                            return false;
+                        default:
+                            return ret;
+                    }
+                }
+            }
+            return null;
+        }
+    },
+    del: function (name) {
+        if (this.localStoreSupport()) {
+            localStorage.removeItem(name);
+        }
+        else {
+            this.set(name, "", -1);
+        }
+    }
+}
 
 var getPersistentVisitorId = (function() {
     var key = 'silp_visitorid';
     var method = allowsThirdPartyCookies() ? 'cookie' : 'localStorage';
     var persistor = {
         localStorage: {
-            set: function(id) { store.set(key, id); },
-            get: function() { return store.get(key); }
+            set: function(id) { window.store.set(key, id); },
+            get: function() { return window.store.get(key); }
         },
         cookie: {
-            set: function(id) { cookie.set(key, id, { expires: 7 }) },
-            get: function() { return cookie.get(key); }
+            set: function(id) { window.store.set(key, id, { expires: 7 }) },
+            get: function() { return window.store.get(key); }
         }
     }[method];
 
@@ -755,4 +1271,3 @@ function guid() {
     function s4() { return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1); };
     return s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
 }
-
