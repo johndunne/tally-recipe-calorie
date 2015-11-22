@@ -45,9 +45,17 @@ function vitaminChangeNames() {
 }
 
 function parseIngredients(ingredients,options,action) {
-    _internalThrottleKeyUps(function() {
+    if(options.throttleKeyPresses!==undefined&&options.throttleKeyPresses==false){
+        if(options.connecting)
+            options.connecting();
         recipeCalCalcParseIngredients(ingredients, options, action);
-    }, 2000)();
+    }else {
+        _internalThrottleKeyUps(function () {
+            if(options.connecting)
+                options.connecting();
+            recipeCalCalcParseIngredients(ingredients, options, action);
+        }, 2000)();
+    }
 }
 
 /*function recipeCalCalcParseIngredients(ingredients, options, action) {
@@ -217,6 +225,7 @@ function recipeCalCalcParseIngredients(ingredients, options, action) {
                     request.setRequestHeader("userid", user_id);
                 },
                 success: function (ingredients_array) {
+                    console.log(ingredients_array);
                     if( ingredients_array ) {
                         var recipe = {nutrition:ingredients_array};
                         recipe = parseRecipeCalCalcResponse(recipe, options);
@@ -287,7 +296,6 @@ function FetchMyRecipesAPI(options, action) {
                     console.error("Successful connection but no data! " + data_in);
                 }
                 applyCSS();
-
             },
             error: function (xhr, type) {
                 action(false, "Server not responding.");
@@ -462,6 +470,340 @@ function internalAttachRecipeObjectMethods(recipe){
     recipe.Parsed = function(){ return recipe.parsed; }
     recipe.Public = function(){ return recipe.public; }
     recipe.Scratch = function(){ return recipe.scratch; }
+    recipe.NutritionSortBy = function(vitamin_key){
+        return recipe.nutrition.sort(function(a, b) {
+            return parseFloat(b[vitamin_key]) - parseFloat(a[vitamin_key]);
+        });
+    }
+
+    if( recipe.total_portions) {
+        recipe.TotalPortions = function () {
+            return recipe.total_portions;
+        }
+        recipe.FoodWeight = function () {
+            return recipe.food_weight;
+        }
+        recipe.Water = function () {
+            recipe.water;
+        }
+        recipe.Calories = function () {
+            recipe.calories;
+        }
+        recipe.Protein = function () {
+            recipe.protein;
+        }
+        recipe.TotalFat = function () {
+            recipe.total_fat;
+        }
+        recipe.Ash = function () {
+            recipe.ash;
+        }
+        recipe.Carbs = function () {
+            recipe.carbs;
+        }
+        recipe.FiberTotalDietry = function () {
+            recipe.fiber_td;
+        }
+        recipe.TotalSugar = function () {
+            recipe.total_sugar;
+        }
+        recipe.Calcium = function () {
+            recipe.calcium;
+        }
+        recipe.Iron = function () {
+            recipe.iron;
+        }
+        recipe.Magnesium = function () {
+            recipe.magnesium;
+        }
+        recipe.Phosphorus = function () {
+            recipe.phosphorus;
+        }
+        recipe.Potassium = function () {
+            recipe.potassium;
+        }
+        recipe.Sodium = function () {
+            recipe.sodium;
+        }
+        recipe.Zinc = function () {
+            recipe.zinc;
+        }
+        recipe.Copper = function () {
+            recipe.copper;
+        }
+        recipe.Manganese = function () {
+            recipe.manganese;
+        }
+        recipe.Selenium = function () {
+            recipe.selenium;
+        }
+        recipe.VitaminC = function () {
+            recipe.vit_c;
+        }
+        recipe.Thiamin = function () {
+            recipe.vit_b1;
+        }
+        recipe.Riboflavin = function () {
+            recipe.vit_b2;
+        }
+        recipe.Niacin = function () {
+            recipe.vit_b3;
+        }
+        recipe.Panto_acid = function () {
+            recipe.vit_b5;
+        }
+        recipe.VitaminB6 = function () {
+            recipe.vit_b6;
+        }
+        recipe.Folate_tot = function () {
+            recipe.folate_tot;
+        }
+        recipe.Folic_acid = function () {
+            recipe.folic_acid;
+        }
+        recipe.Food_folate = function () {
+            recipe.food_folate;
+        }
+        recipe.Folate_dfe = function () {
+            recipe.folate_dfe;
+        }
+        recipe.Choline_tot = function () {
+            recipe.choline_tot;
+        }
+        recipe.VitaminB12 = function () {
+            recipe.vit_b12;
+        }
+        recipe.VitaminA_iu = function () {
+            recipe.vit_a_iu;
+        }
+        recipe.VitaminA_rae = function () {
+            recipe.vit_a_rae;
+        }
+        recipe.Retinol = function () {
+            recipe.retinol;
+        }
+        recipe.Alpha_carot = function () {
+            recipe.alpha_carot;
+        }
+        recipe.Beta_carot = function () {
+            recipe.beta_carot;
+        }
+        recipe.Beta_crypt = function () {
+            recipe.beta_crypt;
+        }
+        recipe.Lycopene = function () {
+            recipe.lycopene;
+        }
+        recipe.Lut_zea = function () {
+            recipe.lut_zea;
+        }
+        recipe.VitaminE = function () {
+            recipe.vit_e;
+        }
+        recipe.VitaminD_mcg = function () {
+            recipe.vit_d_mcg;
+        }
+        recipe.VitaminD_iu = function () {
+            recipe.vit_d_iu;
+        }
+        recipe.VitaminK = function () {
+            recipe.vit_k;
+        }
+        recipe.SaturatedFat = function () {
+            recipe.sat_fat;
+        }
+        recipe.MonoFat = function () {
+            recipe.mono_fat;
+        }
+        recipe.PolyFat = function () {
+            recipe.poly_fat;
+        }
+        recipe.Cholestral = function () {
+            recipe.cholestrl;
+        }
+        recipe.Bioton = function () {
+            recipe.bioton;
+        }
+        recipe.Chloride = function () {
+            recipe.chloride;
+        }
+        recipe.Chromium = function () {
+            recipe.chromium;
+        }
+        recipe.Choline = function () {
+            recipe.choline;
+        }
+        recipe.Fluoride = function () {
+            recipe.fluoride;
+        }
+        recipe.Iodine = function () {
+            recipe.iodine;
+        }
+        recipe.Molybdenum = function () {
+            recipe.molybdenum;
+        }
+    }
+    if (recipe.carbs_unit){
+        recipe.WaterUnit = function () {
+            recipe.water_unit;
+        }
+        recipe.CaloriesUnit = function () {
+            recipe.calories_unit;
+        }
+        recipe.ProteinUnit = function () {
+            recipe.protein_unit;
+        }
+        recipe.TotalFatUnit = function () {
+            recipe.total_fat_unit;
+        }
+        recipe.AshUnit = function () {
+            recipe.ash_unit;
+        }
+        recipe.CarbsUnit = function () {
+            recipe.carbs_unit;
+        }
+        recipe.FiberTotalDietryUnit = function () {
+            recipe.fiber_td_unit;
+        }
+        recipe.TotalSugarUnit = function () {
+            recipe.total_sugar_unit;
+        }
+        recipe.CalciumUnit = function () {
+            recipe.calcium_unit;
+        }
+        recipe.IronUnit = function () {
+            recipe.iron_unit;
+        }
+        recipe.MagnesiumUnit = function () {
+            recipe.magnesium_unit;
+        }
+        recipe.PhosphorusUnit = function () {
+            recipe.phosphorus_unit;
+        }
+        recipe.PotassiumUnit = function () {
+            recipe.potassium_unit;
+        }
+        recipe.SodiumUnit = function () {
+            recipe.sodium_unit;
+        }
+        recipe.ZincUnit = function () {
+            recipe.zinc_unit;
+        }
+        recipe.CopperUnit = function () {
+            recipe.copper_unit;
+        }
+        recipe.ManganeseUnit = function () {
+            recipe.manganese_unit;
+        }
+        recipe.SeleniumUnit = function () {
+            recipe.selenium_unit;
+        }
+        recipe.VitaminCUnit = function () {
+            recipe.vit_c_unit;
+        }
+        recipe.ThiaminUnit = function () {
+            recipe.vit_b1_unit;
+        }
+        recipe.RiboflavinUnit = function () {
+            recipe.vit_b2_unit;
+        }
+        recipe.NiacinUnit = function () {
+            recipe.vit_b3_unit;
+        }
+        recipe.Panto_acidUnit = function () {
+            recipe.vit_b5_unit;
+        }
+        recipe.VitaminB6Unit = function () {
+            recipe.vit_b6_unit;
+        }
+        recipe.Folate_totUnit = function () {
+            recipe.folate_tot_unit;
+        }
+        recipe.Folic_acidUnit = function () {
+            recipe.folic_acid_unit;
+        }
+        recipe.Food_folateUnit = function () {
+            recipe.food_folate_unit;
+        }
+        recipe.Folate_dfeUnit = function () {
+            recipe.folate_dfe_unit;
+        }
+        recipe.Choline_totUnit = function () {
+            recipe.choline_tot_unit;
+        }
+        recipe.VitaminB12Unit = function () {
+            recipe.vit_b12_unit;
+        }
+        recipe.VitaminA_iuUnit = function () {
+            recipe.vit_a_iu_unit;
+        }
+        recipe.VitaminA_raeUnit = function () {
+            recipe.vit_a_rae_unit;
+        }
+        recipe.RetinolUnit = function () {
+            recipe.retinol_unit;
+        }
+        recipe.Alpha_carotUnit = function () {
+            recipe.alpha_carot_unit;
+        }
+        recipe.Beta_carotUnit = function () {
+            recipe.beta_carot_unit;
+        }
+        recipe.Beta_cryptUnit = function () {
+            recipe.beta_crypt_unit;
+        }
+        recipe.LycopeneUnit = function () {
+            recipe.lycopene_unit;
+        }
+        recipe.Lut_zeaUnit = function () {
+            recipe.lut_zea_unit;
+        }
+        recipe.VitaminEUnit = function () {
+            recipe.vit_e_unit;
+        }
+        recipe.VitaminD_mcgUnit = function () {
+            recipe.vit_d_mcg_unit;
+        }
+        recipe.VitaminD_iuUnit = function () {
+            recipe.vit_d_iu_unit;
+        }
+        recipe.VitaminKUnit = function () {
+            recipe.vit_k_unit;
+        }
+        recipe.SaturatedFatUnit = function () {
+            recipe.sat_fat_unit;
+        }
+        recipe.MonoFatUnit = function () {
+            recipe.mono_fat_unit;
+        }
+        recipe.PolyFatUnit = function () {
+            recipe.poly_fat_unit;
+        }
+        recipe.CholestralUnit = function () {
+            recipe.cholestrl_unit;
+        }
+        recipe.BiotonUnit = function () {
+            recipe.bioton_unit;
+        }
+        recipe.ChlorideUnit = function () {
+            recipe.chloride_unit;
+        }
+        recipe.ChromiumUnit = function () {
+            recipe.chromium_unit;
+        }
+        recipe.CholineUnit = function () {
+            recipe.choline_unit;
+        }
+        recipe.FluorideUnit = function () {
+            recipe.fluoride_unit;
+        }
+        recipe.IodineUnit = function () {
+            recipe.iodine_unit;
+        }
+        recipe.MolybdenumUnit = function () {
+            recipe.molybdenum_unit;
+        }
+    }
 
     recipe.Ingredients = function(){return recipe.ingMap;}
     recipe.NumIngredients = function(){return recipe.ingMap.length;}
@@ -518,6 +860,11 @@ function _internalAttachRecipeNutritionObjectMethods(nutrition_object){
         console.error(nutrition_object);
     }
     nutrition_object.RecipeNutritionAbbrevID = function(){ return nutrition_object["recipe_nutrition_abbrev_id"] };
+    nutrition_object.NutritionSortBy = function(vitamin_key){
+        return nutrition_object.nutrition.sort(function(a, b) {
+            return parseFloat(a[vitamin_key]) - parseFloat(b[vitamin_key]);
+        });
+    }
     return _internalAttachNutritionObjectMethods(nutrition_object);
 }
 
@@ -812,7 +1159,24 @@ function _parseNumber( s){
     var f = parseFloat(s);
     return isNaN(f)?0.0:f;
 }
+
+function applyPercentage() {
+    $("[class=\"rda\"]").each(function () {
+        if($(this).attr("done")===undefined) {
+            $(this).attr("done", 1);
+            var per = $(this).text().length > 0 ? _parseNumber($(this).text()) : 0;
+            if (per > 0) {
+                per*=100;
+                $(this).text(per.toFixed(1) + "%");
+            } else {
+                $(this).text("");
+            }
+        }
+    });
+
+}
 function applyCSS() {
+    applyPercentage();
     /*MutationObserver = window.MutationObserver || window.WebKitMutationObserver;
 
     var observer = new MutationObserver(function(mutations, observer) {
@@ -828,10 +1192,14 @@ function applyCSS() {
         $(this).text(_parseNumber($(this).text()).toFixed(0));
     });
     $("[class=\"macro-nutrient-number\"]").each(function () {
-        $(this).text(_parseNumber($(this).text()).toFixed(1));
+        var unit = $(this).attr("unit");
+        if( unit == undefined ) unit="";
+        $(this).text(_parseNumber($(this).text()).toFixed(1)+unit);
     });
     $("[class=\"nutrient-number\"]").each(function () {
-        $(this).text(_parseNumber($(this).text()).toFixed(3));
+        var unit = $(this).attr("unit");
+        if( unit == undefined ) unit="";
+        $(this).text(_parseNumber($(this).text()).toFixed(3)+unit);
     });
 }
 
@@ -1046,6 +1414,7 @@ function fetchAlternativeFoods(food_id, options, action) {
     });
 }
 
+
 function fetchFoodNutritionObject(food_id, amount, options, action) {
     if(!hostname){
         console.error("Missing hostname");
@@ -1166,6 +1535,7 @@ function getExternalTemplateDocument(extracted){
     };
     xhr.send();
 }
+
 window.store = {
     localStoreSupport: function () {
         try {
