@@ -145,6 +145,18 @@ function CreateRecipe(recipe, options, action) {
     });
 }
 
+function FacebookSignup(access_token, options, action) {
+    if( debug ){
+        console.log("Signing up to facebook with an access token:");
+        console.log(options);
+    }
+    var o = {access_token:access_token};
+    if(options.password){
+        o.password = options.password;
+    }
+    PostObject(o, "fb_signin" , options, action);
+}
+
 function PostObject(recipe, command , options, action) {
     if( typeof options === 'function'){
         action = options
@@ -175,13 +187,50 @@ function PostObject(recipe, command , options, action) {
                 }
             },
             error: function (xhr, type) {
-                if(xhr.responseJSON && xhr.responseJSON.error ){
-                    action(false, xhr.responseJSON.error);
+                if(xhr.responseJSON && xhr.responseJSON ){
+                    action(false, xhr.responseJSON);
                 }else {
                     action(false, xhr.statusText);
                 }
                 //ga('set', 'ingredients_parsed', 'error');
                 //alert('Ajax error!')
+            }
+        });
+    }else {
+        console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
+    }
+}
+
+function GetObject(command , options, action) {
+    if( typeof options === 'function'){
+        action = options
+        options = {}
+    }
+    if( debug ){
+        console.log("Sending get object:");
+        console.log(options);
+    }
+
+    if(hostname) {
+        $.ajax({
+            url: scheme + "://" + hostname + "/" + command,
+            type: 'Get',
+            contentType: 'application/x-www-form-urlencoded',
+            headers:{userid:user_id},
+            beforeSend: function (request) {
+                if(debug) console.log("Setting header + " + user_id);
+                request.setRequestHeader("userid", user_id);
+            },
+            success: function (data_in) {
+                if( data_in ) {
+                    action(true,data_in);
+                }else{
+                    console.error("Successful connection but no data! " + data_in);
+                    action(true,data_in);
+                }
+            },
+            error: function (xhr, type) {
+                action(false, xhr.statusText);
             }
         });
     }else {
@@ -214,29 +263,47 @@ function recipeCalCalcParseIngredients(ingredients, options, action) {
             if(query.length>0){
                 query = "?" + query;
             }
+            var json_ingredients= JSON.stringify(ingredients);
+            if( debug ){
+                console.log("Sending ingredients:");
+                console.log(ingredients);
+                console.log(json_ingredients);
+            }
+
             $.ajax({
                 url: scheme + "://" + hostname + "/parse/ingredients" + query,
                 type: 'POST',
                 contentType: 'application/x-www-form-urlencoded',
-                data: JSON.stringify(ingredients), //stringify is important
+                data: json_ingredients, //stringify is important
                 headers:{userid:user_id},
                 beforeSend: function (request) {
                     if(debug) console.log("Setting header + " + user_id);
                     request.setRequestHeader("userid", user_id);
                 },
-                success: function (ingredients_array) {
-                    console.log(ingredients_array);
-                    if( ingredients_array ) {
-                        var recipe = {nutrition:ingredients_array};
-                        recipe = parseRecipeCalCalcResponse(recipe, options);
-                        action(recipe,false);
+                success: function (recipe_object) {
+                    if(debug) console.log(recipe_object);
+                    if( recipe_object ) {
+                        recipe_object = internalAttachRecipeObjectMethods(recipe_object);
+
+                        if( !isNaN(options.portions) && options.portions>0){
+                            if(debug)console.log("Set portions to [" + options.portions + "]");
+                            recipe_object.portions = options.portions;
+                            if(recipe_object.nutrition_per_portion){
+                                if(debug)console.log("Set nutrition per portion portions to [" + options.portions + "]");
+                                console.error(recipe_object.nutrition_per_portion);
+                                recipe_object.nutrition_per_portion.portions = options.portions;
+                                recipe_object.DivideNutritionPerPortion(options.portions);
+                            }
+                        }
+
+                        recipe_object = _internalBuildNutritionLabelData(recipe_object, options);
+                        action(recipe_object,false);
                         _internalScanDomForDynamicUIObjects();
                     } else {
                         console.error("Successful connection but no data! " + ingredients_array);
                         action(false, "Unknown error while contacting the server.");
                     }
                     applyCSS();
-
                 },
                 error: function (xhr, type) {
                     console.error(xhr);
@@ -470,6 +537,12 @@ function internalAttachRecipeObjectMethods(recipe){
     recipe.Parsed = function(){ return recipe.parsed; }
     recipe.Public = function(){ return recipe.public; }
     recipe.Scratch = function(){ return recipe.scratch; }
+    recipe.DivideNutritionPerPortion = function(divide){
+        _internalGetAllNutritionColumnNames().forEach(function(column_name){
+            if(recipe.nutrition_per_portion[column_name])
+                recipe.nutrition_per_portion[column_name] = recipe.nutrition_per_portion[column_name] / divide;
+        });
+    };
     recipe.NutritionSortBy = function(vitamin_key){
         return recipe.nutrition.sort(function(a, b) {
             return parseFloat(b[vitamin_key]) - parseFloat(a[vitamin_key]);
@@ -805,14 +878,14 @@ function internalAttachRecipeObjectMethods(recipe){
         }
     }
 
-    recipe.Ingredients = function(){return recipe.ingMap;}
-    recipe.NumIngredients = function(){return recipe.ingMap.length;}
-    recipe.Ingredient = function(row){return recipe.ingMap[row];}
+    recipe.Ingredients = function(){return recipe.nutrition;}
+    recipe.NumIngredients = function(){return recipe.nutrition.length;}
+    recipe.Ingredient = function(row){return recipe.nutrition[row];}
     recipe.NutritionLabel = function(){return recipe.nutritionLabel;}
     recipe.TallyIngredientNutrition = function(column){
         var total = 0;
         var index = 0;
-        recipe.ingMap.forEach(function(ingredient){
+        recipe.nutrition.forEach(function(ingredient){
             if ( recipe.tempIngredientsStorage[index]!==undefined){
                 total += recipe.tempIngredientsStorage[index][column];
             }else {
@@ -855,17 +928,21 @@ function _internalAttachFoodNutritionObjectMethods(nutrition_object){
 }
 
 function _internalAttachRecipeNutritionObjectMethods(nutrition_object){
-    if(nutrition_object.recipe_nutrition_abbrev_id===undefined){
+    if(nutrition_object.nutrition_per_portion===undefined){
         console.error("attachRecipeNutrition is expecting a recipe nutrition object");
-        console.error(nutrition_object);
+        return nutrition_object;
+    }else {
+        nutrition_object.nutrition_per_portion.RecipeNutritionAbbrevID = function () {
+            return nutrition_object.nutrition_per_portion["recipe_nutrition_abbrev_id"]
+        };
+        nutrition_object.nutrition_per_portion.NutritionSortBy = function (vitamin_key) {
+            return nutrition_object.nutrition.sort(function (a, b) {
+                return parseFloat(a[vitamin_key]) - parseFloat(b[vitamin_key]);
+            });
+        }
+        nutrition_object.nutrition_per_portion = _internalAttachNutritionObjectMethods(nutrition_object.nutrition_per_portion);
+        return nutrition_object;
     }
-    nutrition_object.RecipeNutritionAbbrevID = function(){ return nutrition_object["recipe_nutrition_abbrev_id"] };
-    nutrition_object.NutritionSortBy = function(vitamin_key){
-        return nutrition_object.nutrition.sort(function(a, b) {
-            return parseFloat(a[vitamin_key]) - parseFloat(b[vitamin_key]);
-        });
-    }
-    return _internalAttachNutritionObjectMethods(nutrition_object);
 }
 
 function _internalAttachPossibleRecipeResultObjectMethods(nutrition_object){
@@ -942,13 +1019,13 @@ var ConfigureRemoteRecipeForLocalUse = function (recipe_object, options) {
     }
     return local_recipe;
 }
-var _internalRefreshRecipeOptions = function (recipe_object, options) {
+var _internalBuildNutritionLabelData = function (recipe_object, options) {
     if(!recipe_object){
         console.error("I can't refresh the missing recipe object");
         return;
     }
 
-    if( options.portions ){
+    /*if( options.portions ){
         if ( recipe_object.total_nutrition ){
             recipe_object.portions = options.portions;
             if(!isNaN(parseInt(options.portions, 10))) {
@@ -966,9 +1043,9 @@ var _internalRefreshRecipeOptions = function (recipe_object, options) {
         }
     }else{
         if( debug ) console.warn("No portions");
-    }
+    }*/
 
-    var nutritionLabel = options.nutritionLabel;
+    var nutritionLabel = options.nutritionLabel ? options.nutritionLabel : {};
     if(options.recipeName){
         if( nutritionLabel ){
             nutritionLabel.itemName = options.recipeName;
@@ -1012,7 +1089,7 @@ var _internalRefreshRecipeOptions = function (recipe_object, options) {
         'valueServingSize' : 6,
         'valueServingSizeUnit' : 'DONUTS',*/
 
-        var portion_amount = recipe_object.perPortion ? recipe_object.perPortion : recipe_object.total_nutrition;
+        var portion_amount = recipe_object.nutrition_per_portion;
         nutritionLabel['valueCalories'] = portion_amount["calories"];
         nutritionLabel['valueFatCalories'] = portion_amount[""];
         nutritionLabel['valueTotalFat'] = portion_amount["total_fat"];
@@ -1058,9 +1135,6 @@ var _internalRefreshRecipeOptions = function (recipe_object, options) {
         recipe_object.nutritionLabel = nutritionLabel;
     }
 
-    if( recipe_object.perPortion ){
-        //recipe_object.perPortion = formatNumbers(recipe_object.perPortion);
-    }
     return recipe_object;
 }
 
@@ -1100,19 +1174,19 @@ var parseRecipeCalCalcResponse = function (recipe, options ) {
     });
 
     recipe.ingredientsList = ingredients_list;
-    recipe.total_nutrition = total;
-    recipe.ingMap = ingredients;
+    //recipe.total_nutrition = total;
+    //recipe.ingMap = ingredients;
+    //if(recipe.recipe_id) {
+        recipe = internalAttachRecipeObjectMethods(recipe);
+    //}
 
-    recipe = internalAttachRecipeObjectMethods(recipe);
     if (debug) {
         console.log("Recipe");
-        console.log("Calories a: " + recipe.total_nutrition['calories']);
-        console.log("Calories b: " + recipe.total_nutrition.calories);
-        console.log("Calories c: " + recipe.TallyIngredientNutrition("calories"));
+        console.log("Calories: " + recipe.nutrition_per_portion['calories']);
         console.log(recipe);
     }
 
-    recipe = _internalRefreshRecipeOptions(recipe, options);
+    //recipe = _internalRefreshRecipeOptions(recipe, options);
     return recipe;
 }
 
@@ -1337,11 +1411,17 @@ function _internalRecipeCalCalcSearchRecipesWithIngredients(ingredients, options
             if(query.length>0){
                 query = "?" + query;
             }
+            var json_ingredients= JSON.stringify(ingredients);
+            if( debug ){
+                console.log("Sending ingredients:");
+                console.log(ingredients);
+                console.log(json_ingredients);
+            }
             $.ajax({
                 url: scheme + "://" + hostname + "/recipe/natural-search" + query,
                 type: 'POST',
                 contentType: 'application/x-www-form-urlencoded',
-                data: JSON.stringify(ingredients), //stringify is important
+                data: json_ingredients, //stringify is important
                 headers:{userid:user_id},
                 beforeSend: function (request) {
                     if(debug) console.log("Setting header + " + user_id);
