@@ -98,7 +98,7 @@ function parseIngredients(ingredients,options,action) {
                 headers:{userid:user_id},
                 beforeSend: function (request) {
                     if(debug) console.log("Setting header + " + user_id);
-                    request.setRequestHeader("userid", user_id);
+                    request.setRequestHeader("userid", request_header.userid);
                 },
                 success: function (data_in) {
                     if( data_in ) {
@@ -172,6 +172,28 @@ function CreateRecipe(recipe, options, action) {
     });
 }
 
+function DeleteRecipe(recipe_id, options, action) {
+    if( debug ){
+        console.log("Deleting recipe with options:");
+        console.log(options);
+    }
+
+    DeleteObject("recipe/"+recipe_id , options, function(success,data){
+        action(success, data);
+    });
+}
+
+function DeleteIngredient(ingredient_id, options, action) {
+    if( debug ){
+        console.log("Deleting ingredient with options:");
+        console.log(options);
+    }
+
+    DeleteObject("ingredient/"+ingredient_id , options, function(success,data){
+        action(success, data);
+    });
+}
+
 function FacebookSignup(access_token, options, action) {
     if( debug ){
         console.log("Signing up to facebook with an access token:");
@@ -190,6 +212,7 @@ function FacebookSignin(access_token, options, action) {
         console.log(options);
     }
     var o = {access_token:access_token};
+    options.ignore_user_id=true; // Signin should only be with an access token and not confused with a user_id
     PostObject(o, "fb_signin" , options, action);
 }
 
@@ -199,6 +222,15 @@ function GetMe(options, action) {
         console.log(options);
     }
     GetObject("me" , options, action);
+}
+
+function SignOut(options, action) {
+    if( debug ){
+        console.log("Signing out:");
+        console.log(options);
+    }
+    options.ignore_user_id = true;
+    GetObject("signout" , options, action);
 }
 
 function PostObject(recipe, command , options, action) {
@@ -212,16 +244,22 @@ function PostObject(recipe, command , options, action) {
     }
 
     if(hostname) {
+        var request_header = {};
+        if(options.ignore_user_id!==true){
+            request_header.userid=user_id;
+        }
         $.ajax({
             url: scheme + "://" + hostname + "/" + command,
             type: 'POST',
             contentType: 'application/x-www-form-urlencoded',
             data: JSON.stringify(recipe), //stringify is important
-            headers:{userid:user_id},
+            headers:request_header,
             xhrFields:xhrFields,
             beforeSend: function (request) {
-                if(debug) console.log("Setting header + " + user_id);
-                request.setRequestHeader("userid", user_id);
+                if ( request_header.userid ) {
+                    if (debug) console.log("Setting header + " + user_id);
+                    request.setRequestHeader("userid", request_header.userid);
+                }
             },
             success: function (data_in) {
                 if( data_in ) {
@@ -237,8 +275,54 @@ function PostObject(recipe, command , options, action) {
                 }else {
                     action(false, xhr.statusText);
                 }
-                //ga('set', 'ingredients_parsed', 'error');
-                //alert('Ajax error!')
+            }
+        });
+    }else {
+        console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
+    }
+}
+
+function DeleteObject(command , options, action) {
+    if( typeof options === 'function'){
+        action = options
+        options = {}
+    }
+    if( debug ){
+        console.log("Posting object:");
+        console.log(options);
+    }
+
+    if(hostname) {
+        var request_header = {};
+        if(options.ignore_user_id!==true){
+            request_header.userid=user_id;
+        }
+        $.ajax({
+            url: scheme + "://" + hostname + "/" + command,
+            type: 'DELETE',
+            contentType: 'application/x-www-form-urlencoded',
+            headers:request_header,
+            xhrFields:xhrFields,
+            beforeSend: function (request) {
+                if ( request_header.userid ) {
+                    if (debug) console.log("Setting header + " + user_id);
+                    request.setRequestHeader("userid", request_header.userid);
+                }
+            },
+            success: function (data_in) {
+                if( data_in ) {
+                    action(true,data_in);
+                }else{
+                    console.error("Successful connection but no data! " + data_in);
+                    action(true,data_in);
+                }
+            },
+            error: function (xhr, type) {
+                if(xhr.responseJSON && xhr.responseJSON ){
+                    action(false, xhr.responseJSON);
+                }else {
+                    action(false, xhr.statusText);
+                }
             }
         });
     }else {
@@ -257,16 +341,22 @@ function PutObject(recipe, command , options, action) {
     }
 
     if(hostname) {
+        var request_header = {};
+        if(options.ignore_user_id!==true){
+            request_header.userid=user_id;
+        }
         $.ajax({
             url: scheme + "://" + hostname + "/" + command,
             type: 'PUT',
             contentType: 'application/x-www-form-urlencoded',
             data: JSON.stringify(recipe), //stringify is important
             xhrFields:xhrFields,
-            headers:{userid:user_id},
+            headers:request_header,
             beforeSend: function (request) {
-                if(debug) console.log("Setting header + " + user_id);
-                request.setRequestHeader("userid", user_id);
+                if ( request_header.userid ) {
+                    if (debug) console.log("Setting header + " + user_id);
+                    request.setRequestHeader("userid", request_header.userid);
+                }
             },
             success: function (data_in) {
                 if( data_in ) {
@@ -298,17 +388,24 @@ function GetObject(command , options, action) {
         console.log("Sending get object:");
         console.log(options);
     }
-
+    var request_header = {};
+    if(options.ignore_user_id!==true){
+        request_header.userid=user_id;
+    }
     if(hostname) {
         $.ajax({
             url: scheme + "://" + hostname + "/" + command,
             type: 'Get',
             contentType: 'application/x-www-form-urlencoded',
             xhrFields:xhrFields,
-            headers:{userid:user_id},
+            headers:request_header,
             beforeSend: function (request) {
-                if(debug) {console.log("Setting header + " + user_id);}
-                request.setRequestHeader("userid", user_id);
+                if ( request_header.userid ) {
+                    if (debug) {
+                        console.log("Setting header + " + user_id);
+                    }
+                    request.setRequestHeader("userid", request_header.userid);
+                }
             },
             success: function (data_in) {
                 if( data_in ) {
@@ -358,16 +455,22 @@ function recipeCalCalcParseIngredients(ingredients, options, action) {
                 console.log(ingredients);
                 console.log(json_ingredients);
             }
+            var request_header = {};
+            if(options.ignore_user_id!==true){
+                request_header.userid=user_id;
+            }
 
             $.ajax({
                 url: scheme + "://" + hostname + "/parse/ingredients" + query,
                 type: 'POST',
                 contentType: 'application/x-www-form-urlencoded',
                 data: json_ingredients, //stringify is important
-                headers:{userid:user_id},
+                headers:request_header,
                 beforeSend: function (request) {
-                    if(debug) console.log("Setting header + " + user_id);
-                    request.setRequestHeader("userid", user_id);
+                    if ( request_header.userid ) {
+                        if (debug) console.log("Setting header + " + user_id);
+                        request.setRequestHeader("userid", request_header.userid);
+                    }
                 },
                 success: function (recipe_object) {
                     if(debug) console.log(recipe_object);
@@ -435,13 +538,20 @@ function FetchMyRecipesAPI(options, action) {
         if(query.length>0){
             query = "?" + query;
         }
+        var request_header = {};
+        if(options.ignore_user_id!==true){
+            request_header.userid=user_id;
+        }
+
         $.ajax({
             url: scheme + "://" + hostname + "/" + path  + query,
             type: 'GET',
-            headers:{userid:user_id},
+            headers:request_header,
             beforeSend: function (request) {
-                if(debug) console.log("Setting header + " + user_id);
-                request.setRequestHeader("userid", user_id);
+                if ( request_header.userid ) {
+                    if (debug) console.log("Setting header + " + user_id);
+                    request.setRequestHeader("userid", request_header.userid);
+                }
             },
             success: function (data_in) {
                 if( data_in ) {
@@ -492,13 +602,19 @@ function FetchSingleRecipeAPI(recipe_id, options, action) {
         if(query.length>0){
             query = "?" + query;
         }
+        var request_header = {};
+        if(options.ignore_user_id!==true){
+            request_header.userid=user_id;
+        }
         $.ajax({
             url: scheme + "://" + hostname + "/" + path  + query,
             type: 'GET',
-            headers:{userid:user_id},
+            headers:request_header,
             beforeSend: function (request) {
-                if(debug) console.log("Setting user header id : " + user_id);
-                request.setRequestHeader("userid", user_id);
+                if ( request_header.userid ) {
+                    if (debug) console.log("Setting user header id : " + user_id);
+                    request.setRequestHeader("userid", request_header.userid);
+                }
             },
             success: function (data_in) {
                 console.log(data_in);
@@ -549,13 +665,19 @@ function FetchRecipeSuperObjectAPI(recipe_id, options, action) {
         if(query.length>0){
             query = "?" + query;
         }
+        var request_header = {};
+        if(options.ignore_user_id!==true){
+            request_header.userid=user_id;
+        }
         $.ajax({
             url: scheme + "://" + hostname + "/" + path  + query,
             type: 'GET',
-            headers:{userid:user_id},
+            headers:request_header,
             beforeSend: function (request) {
-                if(debug) console.log("Setting user header id : " + user_id);
-                request.setRequestHeader("userid", user_id);
+                if ( request_header.userid ) {
+                    if (debug) console.log("Setting user header id : " + user_id);
+                    request.setRequestHeader("userid", request_header.userid);
+                }
             },
             success: function (recipe_object) {
                 if(debug) console.log(recipe_object);
@@ -1472,7 +1594,7 @@ function watchAlternativeFoodForClicks(seq, food_box){
                 select += "</select>";
                 if (original_alternatives[seq]==undefined)
                     original_alternatives[seq] = $("#name_" + seq).html();
-                select += "<img id='img_alternative_for_" + seq + "' class='nutrition'>";
+                select += "<img id='img_alternative_for_" + seq + "' class='nutritionCross'>";
                 $("#name_" + seq).html(select);
 
                 watchAlternativeFoodForChanges(seq,food_id);
@@ -1520,15 +1642,21 @@ function _internalRecipeCalCalcSearchRecipesWithIngredients(ingredients, options
                 console.log(ingredients);
                 console.log(json_ingredients);
             }
+            var request_header = {};
+            if(options.ignore_user_id!==true){
+                request_header.userid=user_id;
+            }
             $.ajax({
                 url: scheme + "://" + hostname + "/recipe/natural-search" + query,
                 type: 'POST',
                 contentType: 'application/x-www-form-urlencoded',
                 data: json_ingredients, //stringify is important
-                headers:{userid:user_id},
+                headers:request_header,
                 beforeSend: function (request) {
-                    if(debug) console.log("Setting header + " + user_id);
-                    request.setRequestHeader("userid", user_id);
+                    if ( request_header.userid ) {
+                        if (debug) console.log("Setting header + " + user_id);
+                        request.setRequestHeader("userid", request_header.userid);
+                    }
                 },
                 success: function (data_in) {
                     if(debug) {
@@ -1556,13 +1684,19 @@ function _internalRecipeCalCalcSearchRecipesWithIngredients(ingredients, options
 }
 
 function fetchAlternativeFoodsAndNutrients(food_id, amount_in_grams, options, action) {
+    var request_header = {};
+    if(options.ignore_user_id!==true){
+        request_header.userid=user_id;
+    }
     $.ajax({
         url: scheme + "://" + hostname + "/alternatives/nutrients/" + food_id + "/" + amount_in_grams,
         type: 'GET',
         contentType: 'application/x-www-form-urlencoded',
-        headers:{userid:user_id},
+        headers:request_header,
         beforeSend: function (request) {
-            request.setRequestHeader("userid", user_id);
+            if ( request_header.userid ) {
+                request.setRequestHeader("userid", request_header.userid);
+            }
         },
         success: function (array) {
             array.forEach(function(ingredient){
@@ -1578,13 +1712,19 @@ function fetchAlternativeFoodsAndNutrients(food_id, amount_in_grams, options, ac
 }
 
 function fetchAlternativeFoods(food_id, options, action) {
+    var request_header = {};
+    if(options.ignore_user_id!==true){
+        request_header.userid=user_id;
+    }
     $.ajax({
         url: scheme + "://" + hostname + "/alternatives/" + food_id,
         type: 'GET',
         contentType: 'application/x-www-form-urlencoded',
-        headers:{userid:user_id},
+        headers:request_header,
         beforeSend: function (request) {
-            request.setRequestHeader("userid", user_id);
+            if ( request_header.userid ) {
+                request.setRequestHeader("userid", request_header.userid);
+            }
         },
         success: function (data_in) {
             if(debug)console.log(data_in);
@@ -1609,13 +1749,19 @@ function fetchFoodNutritionObject(food_id, amount, options, action) {
         if( options.provides ){
             url += "/provides";
         }
+        var request_header = {};
+        if(options.ignore_user_id!==true){
+            request_header.userid=user_id;
+        }
         $.ajax({
             url: url,
             type: 'GET',
             contentType: 'application/x-www-form-urlencoded',
-            headers: {userid: user_id},
+            headers:request_header,
             beforeSend: function (request) {
-                request.setRequestHeader("userid", user_id);
+                if ( request_header.userid ) {
+                    request.setRequestHeader("userid", request_header.userid);
+                }
             },
             success: function (data_in) {
                 _internalAttachFoodNutritionObjectMethods(data_in);
@@ -1646,7 +1792,9 @@ function parseRecipeURL(postData, options, action) {
             , contentType: 'application/json'
             //, headers: {UserID: user_id}
             , beforeSend: function (request) {
-                request.setRequestHeader("userid", user_id);
+                if ( request_header.userid ) {
+                    request.setRequestHeader("userid", request_header.userid);
+                }
             }
             , data: JSON.stringify(postData) //stringify is important
             , success: function (data_in) {
