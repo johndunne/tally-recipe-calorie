@@ -3,23 +3,48 @@
  */
 var hostname = null;
 var user_id = null;
+var api_key = null;
 var debug = false;
 var scheme = "https";
 var currentRecipe = {};
 var alternativeFoods = {};
 var apiOptions = false;
-var xhrFields = {};
+var xhrFields = {withCredentials: true};
+var auth_request_header = {};
+
+if (!window.jQuery) {
+    console.error("jQuery (or Zepto) isn't yet imported.");
+}
 
 var _internalLastRequestTime= 0,_internalMSDelayBeforeRequestTriggered=2000;
 var _internalTimeInMS = function (){
     return Date.now();
 }
+
 var initRecipeCalCalc = function (host, api_options) {
     hostname = host;
     if( api_options.debug ){
         debug = api_options.debug;
     }
-    if( api_options.user_id ){
+    if( api_options.api_key ) {
+        api_key = api_options.api_key;
+    } else if( api_options.enable_persistent_visitor ) {
+        if(!api_options.application_name){
+            console.error("I need an application name for persistent vistors.")
+            return;
+        }
+        if( _getLocalApiId()){
+            api_key = _getLocalApiId();
+        }else if( _getLocalUserId()){
+            user_id = _getLocalUserId();
+        }else {
+            getPersistentVisitorId(api_options.application_name, function (id) {
+                if (id) {
+                    api_options.user_id = id;
+                }
+            });
+        }
+    } else if( api_options.user_id ){
         user_id = api_options.user_id;
     }
     if( api_options.withCredentials ){
@@ -39,6 +64,14 @@ var initRecipeCalCalc = function (host, api_options) {
     apiOptions = api_options;
 };
 
+function _internalApplyRequestHeaders( request_header, request ){
+    Object.keys(request_header).forEach(function(key){
+        if(debug){
+            console.info("Setting header = [" + request_header[key] + "]");
+        }
+        request.setRequestHeader(key, request_header[key]);
+    })
+}
 var nutritionalNames={ "amount":"Amount", "common_name":"Common Name", "calories":"Calories", "carbs":"Carbs", "total_sugar":"Total Sugar", "sat_fat":"Sat Fat", "protein":"Protein", "poly_fat":"Poly Fat", "total_fat":"Total fat", "alpha_carot":"Alpha carot", "amount":"Amount", "beta_carot":"Beta Carot", "beta_crypt":"Beta Crypt", "calcium":"Calcium", "cholestrl":"Cholesteral", "choline_tot":"Choline", "copper":"Copper", "fiber_td":"Fiber (td)", "folate_dfe":"Folate (dfe)", "folate_tot":"Folate", "folic_acid":"Folic Acid", "food_folate":"Food Folate", "food_id":"Food ID", "food_weight":"Food Weight", "ingredient_line":"Ingredient line", "iron":"Iron", "lut_zea":"Lut", "lycopene":"Lycopene", "magnesium":"Magnesium", "manganese":"Manganese", "mono_fat":"Mono fat", "multiplier":"Multiplier", "nut_food_id":"Nut Food ID", "phosphorus":"Phosphorus", "potassium":"Potassium", "retinol":"Retinol", "selenium":"Selenium", "shrt_desc":"Shrt Desc", "sodium":"Sodium", "vit_a_iu":"Vit A (iu)", "vit_a_rae":"Vit A", "vit_b1":"Vit B1", "vit_b2":"Vit B2", "vit_b3":"Vit B3", "vit_b5":"Vit B5", "vit_b6":"Vit B6", "vit_b12":"Vit B12", "vit_c":"Vit C", "vit_d_iu":"Vit D (iu)", "vit_d_mcg":"Vit D", "vit_e":"Vit E", "vit_k":"Vit K", "water":"Water", "zinc":"Zinc" };
 var fullNutritionalNames={ "carbs":"Carbohydrates", "sat_fat":"Saturated Fat","poly_fat":"Polyunsaturated Fat","mono_fat":"Monounsaturated fat", "vit_a_iu":"Vitamin A (iu)", "vit_a_rae":"Vitamin A", "vit_b1":"Vitamin B1", "vit_b2":"Vitamin B2", "vit_b3":"Vitamin B3", "vit_b5":"Vitamin B5", "vit_b6":"Vitamin B6", "vit_b12":"Vitamin B12", "vit_c":"Vitamin C", "vit_d_iu":"Vitamin D (iu)", "vit_d_mcg":"Vitamin D", "vit_e":"Vitamin E", "vit_k":"Vitamin K"};
 
@@ -203,7 +236,52 @@ function FacebookSignup(access_token, options, action) {
     if(options.password){
         o.password = options.password;
     }
-    PostObject(o, "fb_signup" , options, action);
+    PostObject(o, "fb_signup" , options, function(success,data){
+        if ( success ){
+            _internalRemoveGuestID();
+        }
+        action(success,data)
+    });
+}
+
+function FacebookSigninAndRequestApiKey(access_token, options, action) {
+    if( debug ){
+        console.log("Signing up to facebook with an access token:");
+        console.log(options);
+    }
+    var o = {access_token:access_token};
+    options.ignore_user_id=true; // Signin should only be with an access token and not confused with a user_id
+    PostObject(o, "fb_signin" , options, function (success,data) {
+        if(success){
+            _internalRemoveGuestID();
+            RequestApiKey({},action);
+        }else{
+            action(success,data);
+        }
+    });
+}
+
+function RequestApiKey(options, action) {
+    if( debug ){
+        console.log("Requesting an API key:");
+        console.log(options);
+    }
+    _internalRemoveGuestID();
+    _internalRemoveApiKey();
+    options.ignore_user_id=true; // Signin should only be with an access token and not confused with a user_id
+    PostObject({},"request-apikey" , options, function(success,data){
+        if(success){
+            if(data.api_key){
+                persistor.set("a:"+data.api_key);
+                console.error("Seeitng new api_keu = " + data.api_key);
+                action(true,data.api_key);
+            }else{
+                action(false,data);
+            }
+        }else{
+            action(success,data);
+        }
+    });
 }
 
 function FacebookSignin(access_token, options, action) {
@@ -213,7 +291,18 @@ function FacebookSignin(access_token, options, action) {
     }
     var o = {access_token:access_token};
     options.ignore_user_id=true; // Signin should only be with an access token and not confused with a user_id
-    PostObject(o, "fb_signin" , options, action);
+    PostObject(o, "fb_signin" , options, function(success,data){
+        if ( success ){
+            _internalRemoveGuestID();
+            if ( !_getLocalApiId() ){
+                RequestApiKey({},action);
+            }else{
+                action(success, data)
+            }
+        }else {
+            action(success, data)
+        }
+    });
 }
 
 function GetMe(options, action) {
@@ -245,9 +334,13 @@ function PostObject(recipe, command , options, action) {
 
     if(hostname) {
         var request_header = {};
-        if(options.ignore_user_id!==true){
+        if(options.ignore_user_id!==true&&user_id){
             request_header.userid=user_id;
         }
+        if(api_key){
+            request_header.apikey = api_key;
+        }
+
         $.ajax({
             url: scheme + "://" + hostname + "/" + command,
             type: 'POST',
@@ -256,10 +349,7 @@ function PostObject(recipe, command , options, action) {
             headers:request_header,
             xhrFields:xhrFields,
             beforeSend: function (request) {
-                if ( request_header.userid ) {
-                    if (debug) console.log("Setting header + " + user_id);
-                    request.setRequestHeader("userid", request_header.userid);
-                }
+                _internalApplyRequestHeaders(request_header,request);
             },
             success: function (data_in) {
                 if( data_in ) {
@@ -294,8 +384,11 @@ function DeleteObject(command , options, action) {
 
     if(hostname) {
         var request_header = {};
-        if(options.ignore_user_id!==true){
+        if(options.ignore_user_id!==true&&user_id){
             request_header.userid=user_id;
+        }
+        if(api_key){
+            request_header.apikey = api_key;
         }
         $.ajax({
             url: scheme + "://" + hostname + "/" + command,
@@ -304,10 +397,7 @@ function DeleteObject(command , options, action) {
             headers:request_header,
             xhrFields:xhrFields,
             beforeSend: function (request) {
-                if ( request_header.userid ) {
-                    if (debug) console.log("Setting header + " + user_id);
-                    request.setRequestHeader("userid", request_header.userid);
-                }
+                _internalApplyRequestHeaders(request_header,request);
             },
             success: function (data_in) {
                 if( data_in ) {
@@ -342,8 +432,11 @@ function PutObject(recipe, command , options, action) {
 
     if(hostname) {
         var request_header = {};
-        if(options.ignore_user_id!==true){
+        if(options.ignore_user_id!==true&&user_id){
             request_header.userid=user_id;
+        }
+        if(api_key){
+            request_header.apikey = api_key;
         }
         $.ajax({
             url: scheme + "://" + hostname + "/" + command,
@@ -353,10 +446,7 @@ function PutObject(recipe, command , options, action) {
             xhrFields:xhrFields,
             headers:request_header,
             beforeSend: function (request) {
-                if ( request_header.userid ) {
-                    if (debug) console.log("Setting header + " + user_id);
-                    request.setRequestHeader("userid", request_header.userid);
-                }
+                _internalApplyRequestHeaders(request_header,request);
             },
             success: function (data_in) {
                 if( data_in ) {
@@ -389,8 +479,11 @@ function GetObject(command , options, action) {
         console.log(options);
     }
     var request_header = {};
-    if(options.ignore_user_id!==true){
+    if(options.ignore_user_id!==true&&user_id){
         request_header.userid=user_id;
+    }
+    if(api_key){
+        request_header.apikey = api_key;
     }
     if(hostname) {
         $.ajax({
@@ -400,12 +493,7 @@ function GetObject(command , options, action) {
             xhrFields:xhrFields,
             headers:request_header,
             beforeSend: function (request) {
-                if ( request_header.userid ) {
-                    if (debug) {
-                        console.log("Setting header + " + user_id);
-                    }
-                    request.setRequestHeader("userid", request_header.userid);
-                }
+                _internalApplyRequestHeaders(request_header,request);
             },
             success: function (data_in) {
                 if( data_in ) {
@@ -456,8 +544,11 @@ function recipeCalCalcParseIngredients(ingredients, options, action) {
                 console.log(json_ingredients);
             }
             var request_header = {};
-            if(options.ignore_user_id!==true){
+            if(options.ignore_user_id!==true&&user_id){
                 request_header.userid=user_id;
+            }
+            if(api_key){
+                request_header.apikey = api_key;
             }
 
             $.ajax({
@@ -467,10 +558,7 @@ function recipeCalCalcParseIngredients(ingredients, options, action) {
                 data: json_ingredients, //stringify is important
                 headers:request_header,
                 beforeSend: function (request) {
-                    if ( request_header.userid ) {
-                        if (debug) console.log("Setting header + " + user_id);
-                        request.setRequestHeader("userid", request_header.userid);
-                    }
+                    _internalApplyRequestHeaders(request_header,request);
                 },
                 success: function (recipe_object) {
                     if(debug) console.log(recipe_object);
@@ -539,8 +627,11 @@ function FetchMyRecipesAPI(options, action) {
             query = "?" + query;
         }
         var request_header = {};
-        if(options.ignore_user_id!==true){
+        if(options.ignore_user_id!==true&&user_id){
             request_header.userid=user_id;
+        }
+        if(api_key){
+            request_header.apikey = api_key;
         }
 
         $.ajax({
@@ -548,10 +639,7 @@ function FetchMyRecipesAPI(options, action) {
             type: 'GET',
             headers:request_header,
             beforeSend: function (request) {
-                if ( request_header.userid ) {
-                    if (debug) console.log("Setting header + " + user_id);
-                    request.setRequestHeader("userid", request_header.userid);
-                }
+                _internalApplyRequestHeaders(request_header,request);
             },
             success: function (data_in) {
                 if( data_in ) {
@@ -603,18 +691,19 @@ function FetchSingleRecipeAPI(recipe_id, options, action) {
             query = "?" + query;
         }
         var request_header = {};
-        if(options.ignore_user_id!==true){
+        if(options.ignore_user_id!==true&&user_id){
             request_header.userid=user_id;
         }
+        if(api_key){
+            request_header.apikey = api_key;
+        }
+
         $.ajax({
             url: scheme + "://" + hostname + "/" + path  + query,
             type: 'GET',
             headers:request_header,
             beforeSend: function (request) {
-                if ( request_header.userid ) {
-                    if (debug) console.log("Setting user header id : " + user_id);
-                    request.setRequestHeader("userid", request_header.userid);
-                }
+                _internalApplyRequestHeaders(request_header,request);
             },
             success: function (data_in) {
                 console.log(data_in);
@@ -666,18 +755,19 @@ function FetchRecipeSuperObjectAPI(recipe_id, options, action) {
             query = "?" + query;
         }
         var request_header = {};
-        if(options.ignore_user_id!==true){
+        if(options.ignore_user_id!==true&&user_id){
             request_header.userid=user_id;
         }
+        if(api_key){
+            request_header.apikey = api_key;
+        }
+
         $.ajax({
             url: scheme + "://" + hostname + "/" + path  + query,
             type: 'GET',
             headers:request_header,
             beforeSend: function (request) {
-                if ( request_header.userid ) {
-                    if (debug) console.log("Setting user header id : " + user_id);
-                    request.setRequestHeader("userid", request_header.userid);
-                }
+                _internalApplyRequestHeaders(request_header,request);
             },
             success: function (recipe_object) {
                 if(debug) console.log(recipe_object);
@@ -1643,9 +1733,13 @@ function _internalRecipeCalCalcSearchRecipesWithIngredients(ingredients, options
                 console.log(json_ingredients);
             }
             var request_header = {};
-            if(options.ignore_user_id!==true){
+            if(options.ignore_user_id!==true&&user_id){
                 request_header.userid=user_id;
             }
+            if(api_key){
+                request_header.apikey = api_key;
+            }
+
             $.ajax({
                 url: scheme + "://" + hostname + "/recipe/natural-search" + query,
                 type: 'POST',
@@ -1653,10 +1747,7 @@ function _internalRecipeCalCalcSearchRecipesWithIngredients(ingredients, options
                 data: json_ingredients, //stringify is important
                 headers:request_header,
                 beforeSend: function (request) {
-                    if ( request_header.userid ) {
-                        if (debug) console.log("Setting header + " + user_id);
-                        request.setRequestHeader("userid", request_header.userid);
-                    }
+                    _internalApplyRequestHeaders(request_header,request);
                 },
                 success: function (data_in) {
                     if(debug) {
@@ -1685,18 +1776,20 @@ function _internalRecipeCalCalcSearchRecipesWithIngredients(ingredients, options
 
 function fetchAlternativeFoodsAndNutrients(food_id, amount_in_grams, options, action) {
     var request_header = {};
-    if(options.ignore_user_id!==true){
+    if(options.ignore_user_id!==true&&user_id){
         request_header.userid=user_id;
     }
+    if(api_key){
+        request_header.apikey = api_key;
+    }
+
     $.ajax({
         url: scheme + "://" + hostname + "/alternatives/nutrients/" + food_id + "/" + amount_in_grams,
         type: 'GET',
         contentType: 'application/x-www-form-urlencoded',
         headers:request_header,
         beforeSend: function (request) {
-            if ( request_header.userid ) {
-                request.setRequestHeader("userid", request_header.userid);
-            }
+            _internalApplyRequestHeaders(request_header,request);
         },
         success: function (array) {
             array.forEach(function(ingredient){
@@ -1713,18 +1806,20 @@ function fetchAlternativeFoodsAndNutrients(food_id, amount_in_grams, options, ac
 
 function fetchAlternativeFoods(food_id, options, action) {
     var request_header = {};
-    if(options.ignore_user_id!==true){
+    if(options.ignore_user_id!==true&&user_id){
         request_header.userid=user_id;
     }
+    if(api_key){
+        request_header.apikey = api_key;
+    }
+
     $.ajax({
         url: scheme + "://" + hostname + "/alternatives/" + food_id,
         type: 'GET',
         contentType: 'application/x-www-form-urlencoded',
         headers:request_header,
         beforeSend: function (request) {
-            if ( request_header.userid ) {
-                request.setRequestHeader("userid", request_header.userid);
-            }
+            _internalApplyRequestHeaders(request_header,request);
         },
         success: function (data_in) {
             if(debug)console.log(data_in);
@@ -1750,18 +1845,20 @@ function fetchFoodNutritionObject(food_id, amount, options, action) {
             url += "/provides";
         }
         var request_header = {};
-        if(options.ignore_user_id!==true){
+        if(options.ignore_user_id!==true&&user_id){
             request_header.userid=user_id;
         }
+        if(api_key){
+            request_header.apikey = api_key;
+        }
+
         $.ajax({
             url: url,
             type: 'GET',
             contentType: 'application/x-www-form-urlencoded',
             headers:request_header,
             beforeSend: function (request) {
-                if ( request_header.userid ) {
-                    request.setRequestHeader("userid", request_header.userid);
-                }
+                _internalApplyRequestHeaders(request_header,request);
             },
             success: function (data_in) {
                 _internalAttachFoodNutritionObjectMethods(data_in);
@@ -1786,15 +1883,17 @@ function parseRecipeURL(postData, options, action) {
                 console.log("Options require a nutritionLabel to be generated.")
             }
         }
+        if(api_key){
+            request_header.apikey = api_key;
+        }
+
         $.ajax({
             url: scheme + "://" + hostname + "/parse/recipe"
             , type: 'POST'
             , contentType: 'application/json'
             //, headers: {UserID: user_id}
             , beforeSend: function (request) {
-                if ( request_header.userid ) {
-                    request.setRequestHeader("userid", request_header.userid);
-                }
+                _internalApplyRequestHeaders(request_header,request);
             }
             , data: JSON.stringify(postData) //stringify is important
             , success: function (data_in) {
@@ -1939,39 +2038,95 @@ window.store = {
     }
 }
 
-var getPersistentVisitorId = (function() {
-    var key = 'silp_visitorid';
-    var method = allowsThirdPartyCookies() ? 'cookie' : 'localStorage';
-    var persistor = {
-        localStorage: {
-            set: function(id) { window.store.set(key, id); },
-            get: function() { return window.store.get(key); }
-        },
-        cookie: {
-            set: function(id) { window.store.set(key, id, { expires: 7 }) },
-            get: function() { return window.store.get(key); }
-        }
-    }[method];
-
-    return function() {
-        var id = persistor.get();
-        if(!id) {
-            id = guid();
-            persistor.set(id);
-        }
-        return id;
-    };
-    // Basically checks for Safari, which we know doesn't allow third-party
-    // cookies. If we were thorough, we should perform an actual check of
-    // generating and fetching a 3rd party cookie. But since, to my knowledge,
-    // Safari is the only browser that disables these per default, this check
-    // suffices for now.
-    function allowsThirdPartyCookies() {
-        var re = /Version\/\d+\.\d+(\.\d+)?.*Safari/;
-        return !re.test(navigator.userAgent);
+var key = '_caloriemash_id';
+var method = allowsThirdPartyCookies() ? 'cookie' : 'localStorage';
+var persistor = {
+    localStorage: {
+        set: function(id) { window.store.set(key, id); },
+        get: function() { return window.store.get(key); },
+        del: function() { return window.store.del(key); }
+    },
+    cookie: {
+        set: function(id) { window.store.set(key, id, { expires: 7 }) },
+        get: function() { return window.store.get(key); },
+        del: function() { return window.store.del(key); }
     }
+}[method];
+function _internalRemoveGuestID(){
+    user_id=null;
+    persistor.del();
+}
+function _internalRemoveApiKey(){
+    api_key=null;
+    persistor.del();
+}
+var getPersistentVisitorId = (function() {
+    return function(application_name,done) {
+        if(typeof application_name !== "string"){
+            console.error("Parameter 1 should be a string (application name). Found [" + (typeof application_name) + "]");
+            return;
+        }
+        if(typeof done !== "function"){
+            console.error("Parameter 2 should be a function. Found [" + (typeof done) + "]");
+            return;
+        }
+        if(application_name.length==0){
+            console.error("Application name is empty");
+            return;
+        }
+        console.error("Fetching a new user_id key [" + key + "]");
+        var id = _getLocalUserId();
+        console.error("Already got : " + id);
+        if(!id) {
+            var suggested_id = guid();
+            persistor.set("i:" + suggested_id); // Assume it will be accepted, it likely will.
+            done(suggested_id);
+            PostObject({username:suggested_id,source:application_name},"request-guestid",{ignore_user_id:true},function(success,data){
+                console.error(success);
+                console.error(data);
+                console.log(data);
+                if(!data.username){
+                    persistor.del();
+                }
+            });
+        }else {
+            done(id);
+        }
+    };
 }());
+function allowsThirdPartyCookies() {
+    var re = /Version\/\d+\.\d+(\.\d+)?.*Safari/;
+    return !re.test(navigator.userAgent);
+}
 
+function _getLocalUserId() {
+    var parts1 = persistor.get();
+    var id = false;
+    if( parts1 ) {
+        console.error("Stored : " + parts1);
+        var parts = parts1.split(":")
+        if (parts.length == 2) {
+            if (parts[0] == "i") {
+                id = parts[1];
+            }
+        }
+    }
+    return id;
+}
+function _getLocalApiId() {
+    var parts1 = persistor.get();
+    var id = false;
+    if(parts1) {
+        console.error("Stored : " + parts1);
+        var parts = parts1.split(":")
+        if (parts.length == 2) {
+            if (parts[0] == "a") {
+                id = parts[1];
+            }
+        }
+    }
+    return id;
+}
 function guid() {
     function s4() { return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1); };
     return s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
