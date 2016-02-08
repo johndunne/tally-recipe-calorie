@@ -12,6 +12,16 @@ var apiOptions = false;
 var xhrFields = {withCredentials: true};
 var auth_request_header = {};
 
+var noLongerValidGuestIDHook = null;
+
+function attachNoLongValidGuestIDHook(hook){
+    if( typeof hook === 'function') {
+        noLongerValidGuestIDHook=hook;
+    }else{
+        console.error("Not a function");
+    }
+}
+
 if (!window.jQuery) {
     console.error("jQuery (or Zepto) isn't yet imported.");
 }
@@ -62,6 +72,7 @@ var initRecipeCalCalc = function (host, api_options) {
         console.warn(api_options);
     }
     apiOptions = api_options;
+
 };
 
 function _internalApplyRequestHeaders( request_header, request ){
@@ -236,9 +247,17 @@ function FacebookSignup(access_token, options, action) {
     if(options.password){
         o.password = options.password;
     }
+    var copy_old_recipes = false;
+    if(options.user_id){
+        if(debug)console.info("I'll request the user's recipes.");
+        copy_old_recipes=true;
+    }
+    _internalRemoveApiKey();
     PostObject(o, "fb_signup" , options, function(success,data){
         if ( success ){
             _internalRemoveGuestID();
+            if(copy_old_recipes)
+                TakeGuestRecipes(options.user_id,{},function(success,data){if(!success)console.error(data)})
         }
         action(success,data)
     });
@@ -249,12 +268,19 @@ function FacebookSigninAndRequestApiKey(access_token, options, action) {
         console.log("Signing up to facebook with an access token:");
         console.log(options);
     }
+    var copy_old_recipes = false;
+    if(options.user_id){
+        copy_old_recipes=true;
+    }
     var o = {access_token:access_token};
     options.ignore_user_id=true; // Signin should only be with an access token and not confused with a user_id
+    _internalRemoveApiKey();
     PostObject(o, "fb_signin" , options, function (success,data) {
         if(success){
             _internalRemoveGuestID();
             RequestApiKey({},action);
+            if(copy_old_recipes)
+                TakeGuestRecipes(options.user_id,{},function(success,data){if(!success)console.error(data)})
         }else{
             action(success,data);
         }
@@ -284,14 +310,36 @@ function RequestApiKey(options, action) {
     });
 }
 
+function RequestGuestKey(the_application_name, options, action) {
+    if( debug ){
+        console.log("Requesting a guest key:");
+        console.log(options);
+    }
+    _internalRemoveGuestID();
+    _internalRemoveApiKey();
+    options.ignore_user_id=true; // Signin should only be with an access token and not confused with a user_id
+    PostObject({source:the_application_name},"request-guestid" , options, function(success,data){
+        if(success){
+            user_id = data.username;
+            action(success,data.username);
+        }else{
+            action(success,data);
+        }
+    });
+}
+
 function FacebookSignin(access_token, options, action) {
     if( debug ){
         console.log("Signing up to facebook with an access token:");
         console.log(options);
     }
+    var copy_old_recipes = false;
+    if(options.user_id){
+        copy_old_recipes=true;
+    }
     var o = {access_token:access_token};
-    options.ignore_user_id=true; // Signin should only be with an access token and not confused with a user_id
-    PostObject(o, "fb_signin" , options, function(success,data){
+    _internalRemoveApiKey();
+    PostObject(o, "fb_signin" , {ignore_user_id:true}, function(success,data){
         if ( success ){
             _internalRemoveGuestID();
             if ( !_getLocalApiId() ){
@@ -299,6 +347,8 @@ function FacebookSignin(access_token, options, action) {
             }else{
                 action(success, data)
             }
+            if(copy_old_recipes)
+                TakeGuestRecipes(options.user_id,{},function(success,data){if(!success)console.error(data)})
         }else {
             action(success, data)
         }
@@ -313,14 +363,51 @@ function GetMe(options, action) {
     GetObject("me" , options, action);
 }
 
+function SearchForIngredient(ingredient_search_term,options, action) {
+    if( debug ){
+        console.log("Getting /me :");
+        console.log(options);
+    }
+    GetObject("/search-ingredients/" + ingredient_search_term, options, action);
+}
+
 function SignOut(options, action) {
     if( debug ){
         console.log("Signing out:");
         console.log(options);
     }
-    options.ignore_user_id = true;
+    _internalRemoveGuestID();
+    _internalRemoveApiKey();
     GetObject("signout" , options, action);
 }
+
+function TakeGuestRecipes(guest_id,options, action) {
+    if( debug ){
+        console.log("Taking guest recipes:");
+        console.log(options);
+    }
+    PostObject({user_id:guest_id},"take-guest-recipes" , options, action);
+}
+
+var genericRecipeCalCalcError = function(action) {
+    return function (xhr, type) {
+        var json_object = JSON.parse(xhr.responseText);
+        if(xhr.status==401){
+            if(json_object.error && json_object.error.indexOf("only be used for guest account")>0){
+                console.log("Deleting invalid guest id.");
+                persistor.del();
+                if(noLongerValidGuestIDHook)noLongerValidGuestIDHook();
+            }
+        }
+        if (xhr.responseJSON && xhr.responseJSON) {
+            action(false, xhr.responseJSON);
+        } else if (json_object.error) {
+            action(false, json_object.error);
+        }else{
+            action(false, xhr.statusText);
+        }
+    }
+};
 
 function PostObject(recipe, command , options, action) {
     if( typeof options === 'function'){
@@ -359,13 +446,7 @@ function PostObject(recipe, command , options, action) {
                     action(true,data_in);
                 }
             },
-            error: function (xhr, type) {
-                if(xhr.responseJSON && xhr.responseJSON ){
-                    action(false, xhr.responseJSON);
-                }else {
-                    action(false, xhr.statusText);
-                }
-            }
+            error: genericRecipeCalCalcError(action)
         });
     }else {
         console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
@@ -407,13 +488,7 @@ function DeleteObject(command , options, action) {
                     action(true,data_in);
                 }
             },
-            error: function (xhr, type) {
-                if(xhr.responseJSON && xhr.responseJSON ){
-                    action(false, xhr.responseJSON);
-                }else {
-                    action(false, xhr.statusText);
-                }
-            }
+            error:  genericRecipeCalCalcError(action)
         });
     }else {
         console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
@@ -456,13 +531,7 @@ function PutObject(recipe, command , options, action) {
                     action(true,data_in);
                 }
             },
-            error: function (xhr, type) {
-                if(xhr.responseJSON && xhr.responseJSON ){
-                    action(false, xhr.responseJSON);
-                }else {
-                    action(false, xhr.statusText);
-                }
-            }
+            error:  genericRecipeCalCalcError(action)
         });
     }else {
         console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
@@ -503,9 +572,7 @@ function GetObject(command , options, action) {
                     action(true,data_in);
                 }
             },
-            error: function (xhr, type) {
-                action(false, xhr.statusText);
-            }
+            error:  genericRecipeCalCalcError(action)
         });
     }else {
         console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
@@ -574,13 +641,7 @@ function recipeCalCalcParseIngredients(ingredients, options, action) {
                     }
                     applyCSS();
                 },
-                error: function (xhr, type) {
-                    console.error(xhr);
-                    console.error(type);
-                    action(false, "Server failed to respond.");
-                    //ga('set', 'ingredients_parsed', 'error');
-                    //alert('Ajax error!')
-                }
+                error:  genericRecipeCalCalcError(action)
             });
         }else {
             console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
@@ -588,6 +649,74 @@ function recipeCalCalcParseIngredients(ingredients, options, action) {
     }else{
         action(false,"I need an array of ingredients or single string ingredient line.")
     }
+}
+
+function recipeCalCalcParseRecipeUrl(recipe_url, options, action) {
+    _internal_recipeCalCalcParseRecipe([ recipe_url ], "via-url", options, action);
+}
+
+function recipeCalCalcParseRecipePage(recipe_url, source_code, options, action) {
+    _internal_recipeCalCalcParseRecipe({page_source:source_code,url:recipe_url}, "via-page-content", options, action);
+}
+
+function recipeCalCalcParseRecipePageBase64(recipe_url, base64_source_code, options, action) {
+    _internal_recipeCalCalcParseRecipe({page_source_b:base64_source_code,url:recipe_url, }, "via-page-content", options, action);
+}
+
+function _internal_recipeCalCalcParseRecipe(recipe_data, command, options, action) {
+    if( typeof options === 'function'){
+        action = options;
+        options = {};
+    }
+    if( debug ){
+        console.log("Parsing ingredients with options:");
+        console.log(options);
+    }
+    //if( Object.prototype.toString.call( ingredients ) === '[object Array]' ) {
+        if(hostname) {
+            var request_header = {};
+            if(options.ignore_user_id!==true&&user_id){
+                request_header.userid=user_id;
+            }
+            if(api_key){
+                request_header.apikey = api_key;
+            }
+            // Which parser are we to use?
+            if(debug){
+                console.log("Sending data to : " + scheme + "://" + hostname + "/parse/" + command + "/recipe")
+                console.log(recipe_data)
+            }
+            $.ajax({
+                url: scheme + "://" + hostname + "/parse/" + command + "/recipe",
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(recipe_data), //stringify is important
+                headers:request_header,
+                beforeSend: function (request) {
+                    _internalApplyRequestHeaders(request_header,request);
+                },
+                success: function (recipe_object) {
+                    if(debug) console.log(recipe_object);
+                    if( recipe_object ) {
+                        recipe_object = internalAttachRecipeObjectMethods(recipe_object);
+                        recipe_object = _internalApplyParseIngredientOptionsToRecipe(recipe_object,options);
+                        currentRecipe = _internalBuildNutritionLabelData(recipe_object, options);
+                        action(true,currentRecipe);
+                        _internalScanDomForDynamicUIObjects();
+                    } else {
+                        console.error("Successful connection but no data! " + ingredients_array);
+                        action(false, "Unknown error while contacting the server.");
+                    }
+                    applyCSS();
+                },
+                error:  genericRecipeCalCalcError(action)
+            });
+        }else {
+            console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
+        }
+    /*}else{
+        action(false,"I need an array of ingredients or single string ingredient line.")
+    }*/
 }
 
 function _internalApplyParseIngredientOptionsToRecipe(recipe_object,options) {
@@ -653,9 +782,7 @@ function FetchMyRecipesAPI(options, action) {
                 }
                 applyCSS();
             },
-            error: function (xhr, type) {
-                action(false, "Server not responding.");
-            }
+            error:  genericRecipeCalCalcError(action)
         });
     }else {
         console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
@@ -717,9 +844,7 @@ function FetchSingleRecipeAPI(recipe_id, options, action) {
                 }
                 applyCSS();
             },
-            error: function (xhr, type) {
-                action(false, "Server not responding.");
-            }
+            error:  genericRecipeCalCalcError(action)
         });
     }else {
         console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
@@ -782,9 +907,7 @@ function FetchRecipeSuperObjectAPI(recipe_id, options, action) {
                     console.error("Successful connection but no data! " + recipe_object);
                 }
             },
-            error: function (xhr, type) {
-                action(false, "Server not responding.");
-            }
+            error:  genericRecipeCalCalcError(action)
         });
     }else {
         console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
@@ -1363,6 +1486,13 @@ var _internalBuildNutritionLabelData = function (recipe_object, options) {
     }*/
 
     var nutritionLabel = options.nutritionLabel ? options.nutritionLabel : {};
+    if(nutritionLabel){
+        // Check that the response object has everything needed to proceed:
+        if(!recipe_object.nutrition_per_portion){
+            console.error("Refusing to process nutritionLabel due to missing nutrition_per_portion field in recipe response.")
+            return recipe_object;
+        }
+    }
     if(options.recipeName){
         if( nutritionLabel ){
             nutritionLabel.itemName = options.recipeName;
@@ -1760,11 +1890,7 @@ function _internalRecipeCalCalcSearchRecipesWithIngredients(ingredients, options
                         console.error("Successful connection but no data! " + data_in);
                     }
                 },
-                error: function (xhr, type) {
-                    action(false, "ajax error");
-                    //ga('set', 'ingredients_parsed', 'error');
-                    //alert('Ajax error!')
-                }
+                error:  genericRecipeCalCalcError(action)
             });
         }else {
             console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
@@ -1797,10 +1923,7 @@ function fetchAlternativeFoodsAndNutrients(food_id, amount_in_grams, options, ac
             });
             action(array);
         },
-        error: function (xhr, type) {
-            action(false, "ajax error");
-            //ga('set', 'ingredients_parsed', 'error');
-        }
+        error:  genericRecipeCalCalcError(action)
     });
 }
 
@@ -1825,10 +1948,7 @@ function fetchAlternativeFoods(food_id, options, action) {
             if(debug)console.log(data_in);
             action(data_in);
         },
-        error: function (xhr, type) {
-            action(false, "ajax error");
-            //ga('set', 'ingredients_parsed', 'error');
-        }
+        error:  genericRecipeCalCalcError(action)
     });
 }
 
@@ -1864,10 +1984,7 @@ function fetchFoodNutritionObject(food_id, amount, options, action) {
                 _internalAttachFoodNutritionObjectMethods(data_in);
                 action(data_in);
             },
-            error: function (xhr, type) {
-                action(false, "ajax error");
-                //ga('set', 'ingredients_parsed', 'error');
-            }
+            error:  genericRecipeCalCalcError(action)
         });
     }
 }
@@ -1913,10 +2030,7 @@ function parseRecipeURL(postData, options, action) {
                     console.error("Successful connection but no data for recipe url! " + data_in);
                 }
             },
-            error: function (xhr, type) {
-                //alert('Ajax error!')
-                action(false, "ajax error");
-            }
+            error:  genericRecipeCalCalcError(action)
         });
     }else {
         console.error("Missing hostname. Call initRecipeCalCalc and provide hostname.");
@@ -2074,18 +2188,23 @@ var getPersistentVisitorId = (function() {
             console.error("Application name is empty");
             return;
         }
-        console.error("Fetching a new user_id key [" + key + "]");
         var id = _getLocalUserId();
-        console.error("Already got : " + id);
         if(!id) {
-            var suggested_id = guid();
-            persistor.set("i:" + suggested_id); // Assume it will be accepted, it likely will.
-            done(suggested_id);
-            PostObject({username:suggested_id,source:application_name},"request-guestid",{ignore_user_id:true},function(success,data){
+            user_id = guid();
+            try {
+                persistor.set("i:" + user_id); // Assume it will be accepted, it likely will.
+            }catch(e){
+                console.error("Failed to save the user id");
+                console.error(e);
+                return;
+            }
+            done(user_id);
+            PostObject({username:user_id,source:application_name},"request-guestid",{ignore_user_id:true},function(success,data){
                 console.error(success);
                 console.error(data);
                 console.log(data);
                 if(!data.username){
+                    user_id=false; // Wow, I really don't like this.
                     persistor.del();
                 }
             });
@@ -2113,6 +2232,23 @@ function _getLocalUserId() {
     }
     return id;
 }
+
+function getRecipeCalCalLocalUserId(){
+    return _getLocalUserId();
+}
+
+function getRecipeCalCalLocalApikey(){
+    return _getLocalApiId();
+}
+
+function setRecipeCalCalLocalUserId(new_value){
+    persistor.set("i:"+new_value);
+}
+
+function setRecipeCalCalLocalApikey(new_value){
+    persistor.set("a:"+new_value);
+}
+
 function _getLocalApiId() {
     var parts1 = persistor.get();
     var id = false;
@@ -2126,6 +2262,17 @@ function _getLocalApiId() {
         }
     }
     return id;
+}
+
+function GetURLParameter(sParam) {
+    var sPageURL = window.location.search.substring(1);
+    var sURLVariables = sPageURL.split('&');
+    for (var i = 0; i < sURLVariables.length; i++) {
+        var sParameterName = sURLVariables[i].split('=');
+        if (sParameterName[0] == sParam) {
+            return sParameterName[1];
+        }
+    }
 }
 function guid() {
     function s4() { return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1); };
