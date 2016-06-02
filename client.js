@@ -4,7 +4,7 @@
 var hostname = null;
 var user_id = null;
 var api_key = null;
-var debug = false;
+var debug = true;
 var scheme = "https";
 var currentRecipe = {};
 var alternativeFoods = {};
@@ -31,31 +31,66 @@ var _internalTimeInMS = function (){
     return Date.now();
 }
 
-var initRecipeCalCalc = function (host, api_options) {
+var initRecipeCalCalc = function (host, api_options, init_complete) {
     hostname = host;
     if( api_options.debug ){
         debug = api_options.debug;
     }
     if( api_options.api_key ) {
         api_key = api_options.api_key;
+        if (init_complete){
+            init_complete(true,{apiKey:api_key});
+        }
     } else if( api_options.enable_persistent_visitor ) {
         if(!api_options.application_name){
-            console.error("I need an application name for persistent vistors.")
+            var msg = "I need an application name for persistent vistors.";
+            console.error(msg);
+            if (init_complete){
+                init_complete(false,msg);
+            }
             return;
         }
-        if( _getLocalApiId()){
+
+        if(api_options.userId){
+            setRecipeCalCalLocalUserId(api_options.userId);
+            if (init_complete){
+                init_complete(true,{userId:api_options.userId});
+            }
+        }
+        else if( _getLocalApiId()){
             api_key = _getLocalApiId();
+            if (init_complete){
+                init_complete(true,{apiKey:api_key});
+            }
         }else if( _getLocalUserId()){
             user_id = _getLocalUserId();
+            if (init_complete){
+                init_complete(true,{userId:user_id});
+            }
         }else {
             getPersistentVisitorId(api_options.application_name, function (id) {
                 if (id) {
                     api_options.user_id = id;
+
+                    if (init_complete){
+                        init_complete(true,{userId:id});
+                    }
+                }else{
+                    if (init_complete){
+                        init_complete(false,"Unknown error");
+                    }
                 }
             });
         }
     } else if( api_options.user_id ){
         user_id = api_options.user_id;
+        if (init_complete){
+            init_complete(true,{userId:user_id});
+        }
+    }else{
+        if (init_complete){
+            init_complete(true,"");
+        }
     }
     if( api_options.withCredentials ){
         xhrFields = {withCredentials: true};
@@ -187,6 +222,41 @@ function _verifyIngredientObject(ingredient){
     return ingredient;
 }
 
+function CreateIngredient(new_ingredient, options, action) {
+    if(!new_ingredient.recipe_id){
+        console.error("Ingredient is missing a recipe_id field")
+        return;
+    } else if(!new_ingredient.multiplier || new_ingredient.multiplier<1){
+        console.error("Multiplier must be at least 1")
+        return;
+    } else if(!new_ingredient.amount_unit){
+        console.error("Missing amount unit")
+        return;
+    }
+    if(new_ingredient.nut_food_id){
+        new_ingredient.food_id = new_ingredient.nut_food_id;
+    }
+    new_ingredient.amount = parseInt(new_ingredient.amount);
+    new_ingredient.recipe_id = parseInt(new_ingredient.recipe_id);
+    new_ingredient.food_id = parseInt(new_ingredient.food_id);
+    if(!new_ingredient.food_id || new_ingredient.food_id < 1 ){
+        console.error("Missing food_id")
+        return;
+    }
+    if( debug ){
+        console.log("Creating ingredient:");
+        console.log(new_ingredient);
+    }
+    PostObject(new_ingredient, "recipe/" + new_ingredient.recipe_id + "/ingredient" , options, function(success,data){
+        var ingredient = JSON.parse(data);
+        if(ingredient) {
+            action(success, ingredient);
+        }else{
+            action(success, data);
+        }
+    });
+}
+
 function SaveIngredient(ingredient_id,ingredient, options, action) {
     if( debug ){
         console.log("Saving ingredient [" + ingredient_id + "]:");
@@ -299,7 +369,6 @@ function RequestApiKey(options, action) {
         if(success){
             if(data.api_key){
                 persistor.set("a:"+data.api_key);
-                console.error("Seeitng new api_keu = " + data.api_key);
                 action(true,data.api_key);
             }else{
                 action(false,data);
@@ -320,8 +389,8 @@ function RequestGuestKey(the_application_name, options, action) {
     options.ignore_user_id=true; // Signin should only be with an access token and not confused with a user_id
     PostObject({source:the_application_name},"request-guestid" , options, function(success,data){
         if(success){
-            user_id = data.username;
-            action(success,data.username);
+            user_id = data.handle;
+            action(success,data.handle);
         }else{
             action(success,data);
         }
@@ -391,7 +460,15 @@ function TakeGuestRecipes(guest_id,options, action) {
 
 var genericRecipeCalCalcError = function(action) {
     return function (xhr, type) {
-        var json_object = JSON.parse(xhr.responseText);
+        console.error(xhr);
+        console.error(xhr.responseText|xhr.responseJSON);
+        var json_object = false;
+        try {
+            json_object = JSON.parse(xhr.responseText);
+        }catch(e){
+            if(debug)console.log("Not JSON:");
+            if(debug)console.log(xhr.responseText);
+        }
         if(xhr.status==401){
             if(json_object.error && json_object.error.indexOf("only be used for guest account")>0){
                 console.log("Deleting invalid guest id.");
@@ -633,7 +710,7 @@ function recipeCalCalcParseIngredients(ingredients, options, action) {
                         recipe_object = internalAttachRecipeObjectMethods(recipe_object);
                         recipe_object = _internalApplyParseIngredientOptionsToRecipe(recipe_object,options);
                         currentRecipe = _internalBuildNutritionLabelData(recipe_object, options);
-                        action(currentRecipe,false);
+                        action(true, currentRecipe);
                         _internalScanDomForDynamicUIObjects();
                     } else {
                         console.error("Successful connection but no data! " + ingredients_array);
@@ -1440,9 +1517,33 @@ function _internalAttachNutritionObjectMethods(nutrition_object){
     nutrition_object.MonosaturatedFat = function(){ return nutrition_object["mono_fat"].toFixed(3) };
     nutrition_object.PolyunsaturatedFat = function(){ return nutrition_object["poly_fat"].toFixed(3) };
     nutrition_object.Cholesterol = function(){ return nutrition_object["cholestrl"].toFixed(3) };
+    nutrition_object.SetAmount = function(new_amount){_adjustNutritionAmount(new_amount,nutrition_object);}
+    if(nutrition_object["food_weight"]!==undefined){// This isn't an ingredient, it's food. So, prep it as an ingredient
+        nutrition_object['amount'] = nutrition_object['food_weight'];
+    }
     return nutrition_object;
 }
 
+function _adjustNutritionAmount(new_amount, nutrition_object){
+    if(nutrition_object["amount"]=== undefined){
+        console.error("The nutrition object is missing an amount field.")
+        console.error(nutrition_object)
+        return;
+    } else if(new_amount<=0){
+        console.error("Illegal amount value")
+        return;
+    }
+    var ratio = new_amount/ nutrition_object['amount'];
+    nutrition_object['amount'] = new_amount;
+    _internalGetAllNutritionColumnNames().forEach(function(column_name){
+        if( nutrition_object[column_name]!== undefined && typeof nutrition_object[column_name] === "number" && !isNaN(nutrition_object[column_name]) && column_name!="amount"  ){
+            nutrition_object[column_name]*=ratio;
+        }
+    });
+    if(nutrition_object['food_weight']){
+        nutrition_object['food_weight'] = new_amount;
+    }
+}
 /*var ConfigureRemoteRecipeForLocalUse = function (recipe_object, options) {
     var local_recipe = parseRecipeCalCalcResponse(recipe_object,options);
     //local_recipe = _internalRefreshRecipeOptions(local_recipe,options);
@@ -1662,6 +1763,7 @@ function formatNumbers(object){
     if(object["calories"]!== undefined && typeof object["calories"] === "number" && !isNaN(object["calories"]) ) {object["calories"] = object["calories"].toFixed(0)};
     if(object["amount"]!== undefined && typeof object["amount"] === "number" && !isNaN(object["amount"]) ) {object["amount"] = object["amount"].toFixed(1)};
     if(object["total_fat"]!== undefined && typeof object["total_fat"] === "number" && !isNaN(object["total_fat"]) ) {object["total_fat"] = object["total_fat"].toFixed(1)};
+    if(object["carbs"]!== undefined && typeof object["carbs"] === "number" && !isNaN(object["carbs"]) ) {object["carbs"] = object["carbs"].toFixed(1)};
     if(object["total_sugar"]!== undefined && typeof object["total_sugar"] === "number" && !isNaN(object["total_sugar"])) {object["total_sugar"] = object["total_sugar"].toFixed(1)};
     if(object["protein"]!== undefined && typeof object["protein"] === "number" && !isNaN(object["protein"])) {object["protein"] = object["protein"].toFixed(1)};
     _internalGetAllNutritionColumnNames().forEach(function(column_name){
@@ -2190,6 +2292,34 @@ var getPersistentVisitorId = (function() {
         }
         var id = _getLocalUserId();
         if(!id) {
+            //
+            // Am I a chrome extension, or am I a web page?
+            if(chrome && chrome.extension){
+                //console.error("I'm a chrome extension")
+                //var port = chrome.extension.connect();
+                //document.getElementById('recipeCalCalcCustomEventDiv').addEventListener('recipeCalCalcCustomEvent', function() {
+                //    var eventData = document.getElementById('recipeCalCalcCustomEventDiv').innerText;
+                //    port.postMessage({message: "recipeCalCalcCustomEvent", values: eventData});
+                //});
+                //chrome.tabs.sendMessage(tabs[0].id, {method: "getLocalAppIds"},
+                //    function (response) {
+                //        if(response) {
+                //            console.error(response);
+                //        }else{
+                //            console.error("There's no onMessage listener attached to the tab!");
+                //        }
+                //    });
+            }else {
+                console.error("I'm the website")
+                var customEvent = document.createEvent('Event');
+                customEvent.initEvent('recipeCalCalcCustomEvent', true, true);
+                function fireCustomEvent(data) {
+                    hiddenDiv = document.getElementById('recipeCalCalcCustomEventDiv');
+                    hiddenDiv.innerText = data
+                    hiddenDiv.dispatchEvent(customEvent);
+                }
+                console.log();
+            }
             user_id = guid();
             try {
                 persistor.set("i:" + user_id); // Assume it will be accepted, it likely will.
@@ -2199,11 +2329,11 @@ var getPersistentVisitorId = (function() {
                 return;
             }
             done(user_id);
-            PostObject({username:user_id,source:application_name},"request-guestid",{ignore_user_id:true},function(success,data){
+            PostObject({handle:user_id,source:application_name},"request-guestid",{ignore_user_id:true},function(success,data){
                 console.error(success);
                 console.error(data);
                 console.log(data);
-                if(!data.username){
+                if(!data.handle){
                     user_id=false; // Wow, I really don't like this.
                     persistor.del();
                 }
@@ -2213,6 +2343,7 @@ var getPersistentVisitorId = (function() {
         }
     };
 }());
+
 function allowsThirdPartyCookies() {
     var re = /Version\/\d+\.\d+(\.\d+)?.*Safari/;
     return !re.test(navigator.userAgent);
@@ -2222,7 +2353,7 @@ function _getLocalUserId() {
     var parts1 = persistor.get();
     var id = false;
     if( parts1 ) {
-        console.error("Stored : " + parts1);
+        if(debug)console.error("Stored : " + parts1);
         var parts = parts1.split(":")
         if (parts.length == 2) {
             if (parts[0] == "i") {
@@ -2253,7 +2384,7 @@ function _getLocalApiId() {
     var parts1 = persistor.get();
     var id = false;
     if(parts1) {
-        console.error("Stored : " + parts1);
+        if(debug)console.error("Stored : " + parts1);
         var parts = parts1.split(":")
         if (parts.length == 2) {
             if (parts[0] == "a") {
